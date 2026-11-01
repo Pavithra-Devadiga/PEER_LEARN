@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PeerLearn - Tutor Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Left Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-inner">
+                <div class="logo">
+                    <strong class="logo-text">PeerLearn</strong>
+                </div>
+                
+                <!-- Tutor Mode Links -->
+                <nav class="nav-menu-vertical">
+                    <a href="tutor-home.html" class="nav-item active">Home</a>
+                    <a href="#" class="nav-item">My Skills</a>
+                    <a href="#" class="nav-item">
+                        Requests 
+                        <span class="badge" style="background: var(--pastel-green);">3</span>
+                    </a>
+                    <a href="#" class="nav-item">My Sessions</a>
+                    <a href="#" class="nav-item">Contribute</a>
+                </nav>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <header class="top-bar">
+                <div class="mode-toggle">
+                    <a href="index.html" style="text-decoration:none;"><button class="mode-btn">Student</button></a>
+                    <a href="tutor-home.html" style="text-decoration:none;"><button class="mode-btn active">Tutor</button></a>
+                </div>
+                
+                <div class="top-actions">
+                    <button class="icon-btn-circle"><span class="icon">🌙</span></button>
+                    <div class="avatar-menu">
+                        <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="Profile" class="avatar-img" style="background: var(--pastel-green);">
+                    </div>
+                </div>
+            </header>
+            
+            <div class="content-area">
+                <!-- Welcome Banner (Green for Tutor Mode) -->
+                <div class="welcome-banner pastel-card green">
+                    <h1 class="greeting">Tutor Mode Active</h1>
+                    <p class="subtitle">You have 3 pending requests waiting for your response.</p>
+                </div>
+                
+                <!-- Tutor Stats Row -->
+                <div class="stats-row">
+                    <div class="stat-card"><span class="stat-value">6</span><span class="stat-label">Wk Streak</span></div>
+                    <div class="stat-card"><span class="stat-value">42</span><span class="stat-label">Taught</span></div>
+                    <div class="stat-card"><span class="stat-value">55h</span><span class="stat-label">Hours</span></div>
+                    <div class="stat-card"><span class="stat-value">18</span><span class="stat-label">Students</span></div>
+                    <div class="stat-card"><span class="stat-value">4.9</span><span class="stat-label">Avg Rating</span></div>
+                </div>
+
+                <div class="dashboard-grid">
+                    <!-- Pending Requests (Call to Action) -->
+                    <div class="dashboard-card border-card">
+                        <div class="card-header">
+                            <h3>Pending Requests</h3>
+                            <button class="text-link">Manage Availability</button>
+                        </div>
+                        
+                        <!-- Grouped by Slot as per spec -->
+                        <div style="font-weight: 700; margin-bottom: 0.5rem; color: var(--text-muted);">Tue 4:00 PM (2 requests)</div>
+                        <div class="session-list" style="margin-bottom: 1.5rem;">
+                            <div class="session-item" style="background: var(--bg-color); padding: 1.5rem;">
+                                <div class="session-info">
+                                    <strong style="font-size: 1.2rem;">Marcus D.</strong>
+                                    <span>Wants to learn: Python Basics (Functions & Scope)</span>
+                                </div>
+                                <div style="display: flex; gap: 10px;">
+                                    <button class="icon-btn-circle" style="width: auto; padding: 0 1.5rem; border-radius: 999px; background: var(--pastel-green); font-weight: 700;">Accept</button>
+                                    <button class="icon-btn-circle" style="width: auto; padding: 0 1.5rem; border-radius: 999px; font-weight: 700;">Reject</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- My Skills & Ratings -->
+                    <div class="dashboard-card border-card">
+                        <div class="card-header">
+                            <h3>My Skills</h3>
+                            <button class="icon-btn-circle small">+</button>
+                        </div>
+                        <div class="session-list">
+                            <div class="session-item pastel-green">
+                                <div class="session-info">
+                                    <strong>Python</strong>
+                                    <span>Advanced • 30 sessions taught • 4.9★</span>
+                                </div>
+                            </div>
+                            <div class="session-item pastel-yellow">
+                                <div class="session-info">
+                                    <strong>UI/UX Design</strong>
+                                    <span>Intermediate • 12 sessions taught • 4.8★</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

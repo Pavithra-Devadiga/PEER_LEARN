@@ -1,0 +1,160 @@
+import React from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { useModeTheme } from './context/ModeThemeContext';
+import { AppShell } from './components/primitives/AppShell';
+
+// Shared Pages
+import { LandingPage } from './pages/shared/LandingPage';
+import { LoginPage } from './pages/shared/LoginPage';
+import { RegisterPage } from './pages/shared/RegisterPage';
+import { ProfilePage } from './pages/shared/ProfilePage';
+
+// Student Mode Pages
+import { StudentHomePage } from './pages/student/StudentHomePage';
+import { BrowseSkillsPage } from './pages/student/BrowseSkillsPage';
+import { TutorsPage } from './pages/student/TutorsPage';
+import { StudentSessionsPage } from './pages/student/StudentSessionsPage';
+import { LearningPage } from './pages/student/LearningPage';
+
+// Tutor Mode Pages
+import { TutorHomePage } from './pages/tutor/TutorHomePage';
+import { MySkillsPage } from './pages/tutor/MySkillsPage';
+import { RequestsPage } from './pages/tutor/RequestsPage';
+import { TutorSessionsPage } from './pages/tutor/TutorSessionsPage';
+import { ContributePage } from './pages/tutor/ContributePage';
+import { InsightsPage } from './pages/tutor/InsightsPage';
+
+// Protected Route Guard
+function ProtectedRoute({ children }) {
+  const { isAuthenticated, mode } = useModeTheme();
+
+  // If auth is enabled and user is not authenticated, redirect to /login
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
+}
+
+export default function App() {
+  const { mode, isAuthenticated } = useModeTheme();
+
+  return (
+    <Routes>
+      <Route element={<AppShell />}>
+        {/* Public Landing & Auth Routes */}
+        <Route
+          path="/"
+          element={isAuthenticated ? <Navigate to={`/${mode}/home`} replace /> : <LandingPage />}
+        />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+
+        {/* Protected App Routes (Auto-bypassed when bypass is ON) */}
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute>
+              <ProfilePage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Student Mode Routes */}
+        <Route
+          path="/student/home"
+          element={
+            <ProtectedRoute>
+              <StudentHomePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/student/browse"
+          element={
+            <ProtectedRoute>
+              <BrowseSkillsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/student/tutors"
+          element={
+            <ProtectedRoute>
+              <TutorsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/student/sessions"
+          element={
+            <ProtectedRoute>
+              <StudentSessionsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/student/learning"
+          element={
+            <ProtectedRoute>
+              <LearningPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Tutor Mode Routes */}
+        <Route
+          path="/tutor/home"
+          element={
+            <ProtectedRoute>
+              <TutorHomePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/tutor/skills"
+          element={
+            <ProtectedRoute>
+              <MySkillsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/tutor/requests"
+          element={
+            <ProtectedRoute>
+              <RequestsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/tutor/sessions"
+          element={
+            <ProtectedRoute>
+              <TutorSessionsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/tutor/contribute"
+          element={
+            <ProtectedRoute>
+              <ContributePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/tutor/insights"
+          element={
+            <ProtectedRoute>
+              <InsightsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Catch-all redirect */}
+        <Route path="*" element={<Navigate to={`/${mode}/home`} replace />} />
+      </Route>
+    </Routes>
+  );
+}

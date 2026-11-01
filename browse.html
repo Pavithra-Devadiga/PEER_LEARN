@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PeerLearn - Browse Skills</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Left Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-inner">
+                <div class="logo">
+                    <strong class="logo-text">PeerLearn</strong>
+                </div>
+                
+                <nav class="nav-menu-vertical">
+                    <a href="index.html" class="nav-item">Home</a>
+                    <a href="browse.html" class="nav-item active">Browse Skills</a>
+                    <a href="browse.html" class="nav-item">Tutors</a>
+                    <a href="sessions.html" class="nav-item">My Sessions <span class="badge">1</span></a>
+                    <a href="#" class="nav-item">Learning</a>
+                </nav>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <header class="top-bar">
+                <div class="mode-toggle">
+                    <a href="index.html" style="text-decoration:none;"><button class="mode-btn active">Student</button></a>
+                    <a href="tutor-home.html" style="text-decoration:none;"><button class="mode-btn">Tutor</button></a>
+                </div>
+                
+                <div class="top-actions">
+                    <button class="icon-btn-circle"><span class="icon">🌙</span></button>
+                    <div class="avatar-menu">
+                        <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="Profile" class="avatar-img">
+                    </div>
+                </div>
+            </header>
+            
+            <div class="content-area">
+                <!-- Search Bar -->
+                <div class="search-box">
+                    <input type="text" class="search-input" placeholder="Search for skills, topics, or tutors...">
+                    <button class="search-btn">Search</button>
+                </div>
+
+                <!-- Best Match -->
+                <div class="dashboard-card border-card" style="background: var(--pastel-yellow); padding: 1.5rem 2rem;">
+                    <div class="card-header" style="margin-bottom: 0.5rem;">
+                        <h3 style="color: var(--text-main); font-size: 1.2rem;">⭐ Recommended Best Match for "Python"</h3>
+                    </div>
+                    <div class="session-item" style="background: var(--panel-bg);">
+                        <div class="session-info">
+                            <strong style="font-size: 1.3rem;">Sarah Jenkins</strong>
+                            <span>Advanced • 4.8★ (42 reviews) • Free Tue/Thu</span>
+                        </div>
+                        <button class="icon-btn-circle" style="background: var(--text-main); color: var(--panel-bg); width: 140px; border-radius: 999px; font-size: 1rem; font-weight: 700;">Request Session</button>
+                    </div>
+                </div>
+
+                <!-- Other Tutors -->
+                <h3 style="font-size: 1.5rem; margin-top: 1rem;">Other Tutors</h3>
+                <div class="session-list">
+                    <div class="session-item" style="background: var(--panel-bg);">
+                        <div class="session-info">
+                            <strong>Alex Rivera</strong>
+                            <span>Intermediate • 4.5★ (12 reviews) • Free Mon/Wed</span>
+                        </div>
+                        <button class="icon-btn-circle" style="width: 140px; border-radius: 999px; font-size: 1rem; font-weight: 700;">View Profile</button>
+                    </div>
+                    
+                    <div class="session-item" style="background: var(--panel-bg);">
+                        <div class="session-info">
+                            <strong>Priya Patel</strong>
+                            <span>Advanced • 5.0★ (8 reviews) • Free Friday</span>
+                        </div>
+                        <button class="icon-btn-circle" style="width: 140px; border-radius: 999px; font-size: 1rem; font-weight: 700;">View Profile</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

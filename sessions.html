@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PeerLearn - My Sessions</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Left Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-inner">
+                <div class="logo">
+                    <strong class="logo-text">PeerLearn</strong>
+                </div>
+                
+                <nav class="nav-menu-vertical">
+                    <a href="index.html" class="nav-item">Home</a>
+                    <a href="browse.html" class="nav-item">Browse Skills</a>
+                    <a href="browse.html" class="nav-item">Tutors</a>
+                    <a href="sessions.html" class="nav-item active">My Sessions <span class="badge">1</span></a>
+                    <a href="#" class="nav-item">Learning</a>
+                </nav>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <header class="top-bar">
+                <div class="mode-toggle">
+                    <a href="index.html" style="text-decoration:none;"><button class="mode-btn active">Student</button></a>
+                    <a href="tutor-home.html" style="text-decoration:none;"><button class="mode-btn">Tutor</button></a>
+                </div>
+                
+                <div class="top-actions">
+                    <button class="icon-btn-circle"><span class="icon">🌙</span></button>
+                    <div class="avatar-menu">
+                        <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="Profile" class="avatar-img">
+                    </div>
+                </div>
+            </header>
+            
+            <div class="content-area">
+                <!-- Tabs -->
+                <div class="tabs-nav">
+                    <button class="tab-btn">Pending</button>
+                    <button class="tab-btn active">Upcoming</button>
+                    <button class="tab-btn">Completed</button>
+                    <button class="tab-btn">Cancelled</button>
+                </div>
+
+                <!-- Expanded Session View -->
+                <div class="border-card">
+                    <div class="card-header">
+                        <h3>Python Basics <span style="font-size: 1rem; color: var(--text-muted); font-weight: 500; margin-left: 10px;">Tomorrow, 4:00 PM</span></h3>
+                        <button class="icon-btn-circle" style="width: auto; padding: 0 1rem; border-radius: 999px; font-size: 0.9rem;">Cancel Booking</button>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                        <!-- Topic Checklist -->
+                        <div>
+                            <h4 style="margin-bottom: 1rem; font-size: 1.1rem;">Topics to Cover</h4>
+                            <div class="progress-list">
+                                <label style="display: flex; gap: 10px; align-items: center; font-weight: 500;"><input type="checkbox" checked disabled> Data Types & Variables</label>
+                                <label style="display: flex; gap: 10px; align-items: center; font-weight: 500;"><input type="checkbox" checked disabled> Control Flow (If/Else)</label>
+                                <label style="display: flex; gap: 10px; align-items: center; font-weight: 500;"><input type="checkbox" disabled> Functions & Scope</label>
+                            </div>
+                        </div>
+
+                        <!-- Chat Thread Built in -->
+                        <div class="chat-container">
+                            <div class="chat-messages">
+                                <div class="chat-bubble tutor">
+                                    Hi Felix! I accepted your request. Have you used any programming languages before?
+                                </div>
+                                <div class="chat-bubble student">
+                                    Thanks Sarah! A little bit of JavaScript, but Python is completely new to me.
+                                </div>
+                            </div>
+                            <div class="chat-input">
+                                <input type="text" placeholder="Type a message...">
+                                <button class="icon-btn-circle small" style="width: 32px; height: 32px;">↑</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PeerLearn — Student & Tutor Skill Exchange</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <!-- Flash Prevention: Apply saved theme & mode before first paint -->
+    <script>
+      (function() {
+        try {
+          var savedTheme = localStorage.getItem('peerlearn_theme');
+          var theme = savedTheme;
+          if (!theme) {
+            theme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+          document.documentElement.dataset.theme = theme;
+
+          var savedMode = localStorage.getItem('peerlearn_mode');
+          var mode = savedMode || 'student';
+          if (window.location.pathname.startsWith('/tutor')) {
+            mode = 'tutor';
+          }
+          document.documentElement.dataset.mode = mode;
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
