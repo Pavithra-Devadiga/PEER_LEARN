@@ -34,10 +34,10 @@ export function ModeThemeProvider({ children }) {
     return 'light';
   });
 
-  // Auth Bypass Switch (persisted in localStorage so you can toggle it in browser anytime)
+  // Auth Bypass Switch (defaults to false for real auth testing)
   const [authBypass, setAuthBypassState] = useState(() => {
     const saved = localStorage.getItem('peerlearn_auth_bypass');
-    return saved !== null ? saved === 'true' : DEFAULT_BYPASS_AUTH;
+    return saved === 'true' && DEFAULT_BYPASS_AUTH;
   });
 
   // User state

@@ -6,10 +6,12 @@ import { Calendar } from '../../components/primitives/Calendar';
 import { placeholderData } from '../../data/placeholderData';
 import { ArrowRight, Star, Clock, Check, X } from 'lucide-react';
 import { PillButton } from '../../components/primitives/PillButton';
+import { useModeTheme } from '../../context/ModeThemeContext';
 
 export function TutorHomePage() {
   const navigate = useNavigate();
   const outletCtx = useOutletContext();
+  const { user } = useModeTheme();
   const data = placeholderData.tutor;
 
   return (
@@ -17,7 +19,7 @@ export function TutorHomePage() {
       {/* 1. Welcome Banner (Green Accent) */}
       <div className="w-full p-6 sm:p-8 rounded-3xl border border-border-card bg-[var(--banner-bg)] text-text-main shadow-card flex flex-col justify-center">
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight mb-1 text-[var(--banner-text)]">
-          Welcome back, {data.name}
+          Welcome back, {user?.name || data.name}
         </h1>
         <p className="text-xs sm:text-sm text-text-secondary font-medium">
           {data.welcomeSubtitle}

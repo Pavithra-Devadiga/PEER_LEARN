@@ -6,8 +6,11 @@ import { Calendar } from '../../components/primitives/Calendar';
 import { placeholderData } from '../../data/placeholderData';
 import { ArrowRight, Award, CheckCircle2, Clock } from 'lucide-react';
 
+import { useModeTheme } from '../../context/ModeThemeContext';
+
 export function StudentHomePage() {
   const navigate = useNavigate();
+  const { user } = useModeTheme();
   const data = placeholderData.student;
 
   return (
@@ -15,7 +18,7 @@ export function StudentHomePage() {
       {/* 1. Welcome Banner */}
       <div className="w-full p-6 sm:p-8 rounded-3xl border border-border-card bg-[var(--banner-bg)] text-text-main shadow-card flex flex-col justify-center">
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight mb-1 text-[var(--banner-text)]">
-          Welcome back, {data.name}
+          Welcome back, {user?.name || data.name}
         </h1>
         <p className="text-xs sm:text-sm text-text-secondary font-medium">
           {data.welcomeSubtitle}
