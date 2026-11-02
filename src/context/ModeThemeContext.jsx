@@ -1,16 +1,16 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 
 const ModeThemeContext = createContext();
 
 // ============================================================================
 // ⚙️ DEV CONFIG: AUTH BYPASS SWITCH
-// When true, you and your team will NEVER be asked to log in while developing.
-// Set to false when you want to test real auth flows (login/register/protected routes).
-// You can also toggle this dynamically from the browser console with:
-//   window.__toggleAuthBypass()
+// When false, real Supabase authentication is active!
+// If you want to temporarily skip login during dev without credentials,
+// you can click the floating pill at bottom-right or call window.__toggleAuthBypass()
 // ============================================================================
-const DEFAULT_BYPASS_AUTH = true;
+const DEFAULT_BYPASS_AUTH = false;
 
 export function ModeThemeProvider({ children }) {
   const navigate = useNavigate();
@@ -34,21 +34,11 @@ export function ModeThemeProvider({ children }) {
     return 'light';
   });
 
-  // Auth Bypass Switch (persisted in localStorage so you can toggle it in the browser anytime)
+  // Auth Bypass Switch (persisted in localStorage so you can toggle it in browser anytime)
   const [authBypass, setAuthBypassState] = useState(() => {
     const saved = localStorage.getItem('peerlearn_auth_bypass');
     return saved !== null ? saved === 'true' : DEFAULT_BYPASS_AUTH;
   });
-
-  // Default Mock / Demo user
-  const demoUser = {
-    id: 'user-demo-1',
-    name: 'Hannah',
-    email: 'hannah.student@university.edu',
-    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
-    initials: 'H',
-    signedIn: true,
-  };
 
   // User state
   const [user, setUser] = useState(() => {
@@ -58,11 +48,10 @@ export function ModeThemeProvider({ children }) {
         return JSON.parse(savedUser);
       } catch (e) {}
     }
-    return demoUser;
+    return { signedIn: false };
   });
 
-  // Effective authenticated status (True if bypass is enabled OR if user is signed in)
-  const isAuthenticated = authBypass || Boolean(user?.signedIn);
+  const [authLoading, setAuthLoading] = useState(true);
 
   // Sync mode to DOM
   useEffect(() => {
@@ -82,19 +71,87 @@ export function ModeThemeProvider({ children }) {
   }, [authBypass]);
 
   useEffect(() => {
-    localStorage.setItem('peerlearn_user', JSON.stringify(user));
+    if (user) {
+      localStorage.setItem('peerlearn_user', JSON.stringify(user));
+    }
   }, [user]);
+
+  // Helper to format Supabase user into app user model
+  const formatUser = (sbUser) => {
+    if (!sbUser) return { signedIn: false };
+    const fullName = sbUser.user_metadata?.full_name || sbUser.email?.split('@')[0] || 'User';
+    return {
+      id: sbUser.id,
+      email: sbUser.email,
+      name: fullName,
+      avatar: sbUser.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(fullName)}`,
+      initials: fullName.charAt(0).toUpperCase(),
+      signedIn: true,
+    };
+  };
+
+  // Restore session from Supabase on initial load
+  useEffect(() => {
+    let mounted = true;
+
+    async function checkSession() {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        if (mounted) {
+          if (session?.user) {
+            setUser(formatUser(session.user));
+          } else if (!authBypass) {
+            setUser({ signedIn: false });
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching Supabase session:', err);
+      } finally {
+        if (mounted) setAuthLoading(false);
+      }
+    }
+
+    checkSession();
+
+    // Listen to real-time auth events (token refresh, sign in, sign out)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (mounted) {
+        if (session?.user) {
+          setUser(formatUser(session.user));
+        } else if (!authBypass) {
+          setUser({ signedIn: false });
+        }
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription?.unsubscribe();
+    };
+  }, [authBypass]);
 
   // Expose handy console helper for you and your team:
   useEffect(() => {
     window.__toggleAuthBypass = () => {
       setAuthBypassState((prev) => {
         const next = !prev;
-        console.log(`[PeerLearn Auth] Bypass mode is now: ${next ? 'ENABLED (Always logged in)' : 'DISABLED (Real auth enforced)'}`);
+        if (next && (!user || !user.signedIn)) {
+          // Provide demo user when activating bypass
+          setUser({
+            id: 'demo-user',
+            name: 'Hannah',
+            email: 'hannah.student@university.edu',
+            avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
+            initials: 'H',
+            signedIn: true,
+          });
+        }
+        console.log(`[PeerLearn Auth] Bypass mode is now: ${next ? 'ENABLED (Always logged in)' : 'DISABLED (Real Supabase Auth enforced)'}`);
         return next;
       });
     };
-  }, []);
+  }, [user]);
 
   // Mode-prefixed route guardian
   useEffect(() => {
@@ -117,28 +174,84 @@ export function ModeThemeProvider({ children }) {
   };
 
   const toggleAuthBypass = () => {
-    setAuthBypassState((prev) => !prev);
+    setAuthBypassState((prev) => {
+      const next = !prev;
+      if (next && (!user || !user.signedIn)) {
+        setUser({
+          id: 'demo-user',
+          name: 'Hannah',
+          email: 'hannah.student@university.edu',
+          avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
+          initials: 'H',
+          signedIn: true,
+        });
+      }
+      return next;
+    });
   };
 
-  const signOut = () => {
-    // When signing out, if auth bypass was on, turn it off so you can see the landing/login page
-    setAuthBypassState(false);
-    setUser((prev) => ({ ...prev, signedIn: false }));
-    navigate('/');
-  };
+  // Real Supabase sign in
+  const signIn = async (credentials) => {
+    if (credentials?.email && credentials?.password) {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: credentials.email,
+        password: credentials.password,
+      });
+      if (error) throw error;
+      if (data?.user) {
+        setUser(formatUser(data.user));
+      }
+      navigate(`/${mode}/home`);
+      return data;
+    }
 
-  const signIn = (credentials) => {
-    const loggedUser = {
-      id: 'user-demo-1',
-      name: credentials?.email?.split('@')[0] || 'Hannah',
-      email: credentials?.email || 'hannah.student@university.edu',
+    // Demo fallback if called without credentials
+    const fallbackUser = {
+      id: 'demo-user',
+      name: 'Hannah',
+      email: 'hannah.student@university.edu',
       avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
       initials: 'H',
       signedIn: true,
     };
-    setUser(loggedUser);
+    setUser(fallbackUser);
     navigate(`/${mode}/home`);
   };
+
+  // Real Supabase sign up
+  const signUp = async ({ name, email, password }) => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: name,
+        },
+      },
+    });
+    if (error) throw error;
+    if (data?.user && data?.session) {
+      setUser(formatUser(data.user));
+      navigate(`/${mode}/home`);
+    }
+    return data;
+  };
+
+  // Real Supabase sign out
+  const signOut = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error('Supabase signOut error:', e);
+    }
+    setAuthBypassState(false);
+    setUser({ signedIn: false });
+    localStorage.removeItem('peerlearn_user');
+    navigate('/');
+  };
+
+  // Effective authenticated status (True if bypass is enabled OR if user is signed in)
+  const isAuthenticated = authBypass || Boolean(user?.signedIn);
 
   return (
     <ModeThemeContext.Provider
@@ -152,8 +265,10 @@ export function ModeThemeProvider({ children }) {
         isAuthenticated,
         authBypass,
         toggleAuthBypass,
+        authLoading,
         signOut,
         signIn,
+        signUp,
       }}
     >
       {children}
