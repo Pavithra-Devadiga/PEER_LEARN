@@ -1,37 +1,66 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from '../../components/primitives/Card';
 import { PillButton } from '../../components/primitives/PillButton';
 import { Badge } from '../../components/primitives/Badge';
-import { placeholderData } from '../../data/placeholderData';
-import { Clock, Check, X, User, AlertCircle } from 'lucide-react';
+import { Clock, Check, X, AlertCircle } from 'lucide-react';
+import { apiRequest } from '../../lib/api';
+import { useModeTheme } from '../../context/ModeThemeContext';
+import { useToast } from '../../context/ToastContext';
 
 export function RequestsPage() {
-  const [slotGroups, setSlotGroups] = useState(placeholderData.tutorRequestsGrouped);
+  const { refreshBadges } = useModeTheme();
+  const { showToast } = useToast();
+  const [slotGroups, setSlotGroups] = useState([]);
   const [actionNotice, setActionNotice] = useState(null);
 
-  const handleAcceptRequest = (slotTime, reqId, studentName) => {
-    // Spec rule: Accepting one request automatically rejects the rest for that slot!
-    setSlotGroups((prev) => prev.filter((group) => group.slotTime !== slotTime));
-    setActionNotice(
-      `Accepted ${studentName}'s booking for ${slotTime}! Other conflicting requests for this slot were automatically rejected with reason "Slot was taken".`
-    );
-    setTimeout(() => setActionNotice(null), 5000);
+  const fetchRequests = useCallback(async () => {
+    try {
+      const data = await apiRequest('/api/tutor/requests');
+      if (Array.isArray(data)) setSlotGroups(data);
+    } catch (err) {
+      showToast(err.message || 'Could not load session requests.', 'error');
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    fetchRequests();
+  }, [fetchRequests]);
+
+  const handleAcceptRequest = async (slotTime, reqId, studentName) => {
+    try {
+      const res = await apiRequest(`/api/tutor/requests/${reqId}/accept`, { method: 'POST' });
+      await fetchRequests();
+      refreshBadges();
+      const extraMsg = res?.rejectedCount > 0
+        ? ` ${res.rejectedCount} conflicting request(s) for this slot were automatically rejected with reason "Slot was taken".`
+        : '';
+      const notice = `Accepted ${studentName}'s booking for ${slotTime}!${extraMsg}`;
+      setActionNotice(notice);
+      showToast(notice, 'success');
+      setTimeout(() => setActionNotice(null), 5000);
+    } catch (err) {
+      const msg = err.message || 'Could not accept request.';
+      setActionNotice(msg);
+      showToast(msg, 'error');
+      setTimeout(() => setActionNotice(null), 4000);
+    }
   };
 
-  const handleRejectRequest = (slotTime, reqId, studentName) => {
-    setSlotGroups((prev) =>
-      prev
-        .map((group) => {
-          if (group.slotTime === slotTime) {
-            const remaining = group.requests.filter((r) => r.id !== reqId);
-            return remaining.length > 0 ? { ...group, requests: remaining } : null;
-          }
-          return group;
-        })
-        .filter(Boolean)
-    );
-    setActionNotice(`Rejected request from ${studentName}.`);
-    setTimeout(() => setActionNotice(null), 3500);
+  const handleRejectRequest = async (slotTime, reqId, studentName) => {
+    try {
+      await apiRequest(`/api/tutor/requests/${reqId}/reject`, { method: 'POST' });
+      await fetchRequests();
+      refreshBadges();
+      const notice = `Rejected request from ${studentName}.`;
+      setActionNotice(notice);
+      showToast(notice, 'info');
+      setTimeout(() => setActionNotice(null), 3500);
+    } catch (err) {
+      const msg = err.message || 'Could not reject request.';
+      setActionNotice(msg);
+      showToast(msg, 'error');
+      setTimeout(() => setActionNotice(null), 4000);
+    }
   };
 
   const totalPending = slotGroups.reduce((acc, g) => acc + g.requests.length, 0);
@@ -64,14 +93,14 @@ export function RequestsPage() {
         </Card>
       ) : (
         slotGroups.map((group) => (
-          <div key={group.slotTime} className="space-y-3">
+          <div key={group.slotId || group.slotTime} className="space-y-3">
             {/* Slot Header */}
-            <div className="flex items-center justify-between px-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1 sm:px-2">
               <div className="flex items-center gap-2 font-bold text-sm text-text-main">
                 <Clock className="w-4 h-4 text-accent" />
                 <span>{group.slotTime}</span>
                 <span className="text-xs text-text-muted font-normal">
-                  ({group.requests.length} students requested this slot)
+                  ({group.requests.length} student{group.requests.length === 1 ? '' : 's'} requested this slot)
                 </span>
               </div>
               <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-card-muted text-text-secondary border border-border-subtle">
@@ -101,31 +130,36 @@ export function RequestsPage() {
                         </div>
 
                         {/* Quick Stats */}
-                        <div className="flex items-center gap-2 text-xs text-text-muted">
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
                           <span className="bg-card-muted px-2 py-0.5 rounded-lg border border-border-subtle">
                             {req.stats.completed} sessions completed
                           </span>
                           <span className="bg-card-muted px-2 py-0.5 rounded-lg border border-border-subtle">
                             Quiz score: {req.stats.quizScore}
                           </span>
+                          <span className="bg-accent-muted text-accent font-bold px-2.5 py-0.5 rounded-lg border border-accent/20">
+                            ₹{req.feeInr ?? 99}/hr
+                          </span>
                         </div>
 
                         {/* Topics student asked for */}
-                        <div className="pt-2">
-                          <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider block mb-1">
-                            Requested topics:
-                          </span>
-                          <div className="flex flex-wrap gap-1.5">
-                            {req.topics.map((t) => (
-                              <span
-                                key={t}
-                                className="text-xs font-semibold px-2.5 py-0.5 rounded-lg bg-accent-muted text-accent"
-                              >
-                                {t}
-                              </span>
-                            ))}
+                        {req.topics?.length > 0 && (
+                          <div className="pt-2">
+                            <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider block mb-1">
+                              Requested topics:
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {req.topics.map((t) => (
+                                <span
+                                  key={t}
+                                  className="text-xs font-semibold px-2.5 py-0.5 rounded-lg bg-accent-muted text-accent"
+                                >
+                                  {t}
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                        </div>
+                        )}
 
                         {req.message && (
                           <p className="text-xs text-text-secondary italic pt-1">
@@ -136,7 +170,7 @@ export function RequestsPage() {
                     </div>
 
                     {/* Action Buttons */}
-                    <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                    <div className="flex flex-wrap items-center gap-2 self-end sm:self-center sm:shrink-0">
                       <PillButton
                         variant="secondary"
                         size="sm"

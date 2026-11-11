@@ -1,79 +1,156 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Card } from '../../components/primitives/Card';
 import { PillButton } from '../../components/primitives/PillButton';
 import { Badge } from '../../components/primitives/Badge';
-import { placeholderData } from '../../data/placeholderData';
-import { Clock, Send, CheckCircle2, ChevronDown, Plus, Star, MessageSquare } from 'lucide-react';
+import { Clock, Send, ChevronDown, Star, MessageSquare, Video, ExternalLink, Link2, HelpCircle, CheckCircle2 } from 'lucide-react';
+import { apiRequest } from '../../lib/api';
+import { useToast } from '../../context/ToastContext';
+
+function isSafeHttpUrl(url) {
+  return typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'));
+}
 
 export function TutorSessionsPage() {
+  const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState('Upcoming');
-  const [sessions, setSessions] = useState(placeholderData.sessions);
-  const [expandedSessionId, setExpandedSessionId] = useState('sess-102');
+  const [sessions, setSessions] = useState([]);
+  const [expandedSessionId, setExpandedSessionId] = useState(null);
   const [newTopicInput, setNewTopicInput] = useState('');
   const [newMessage, setNewMessage] = useState('');
+  const [meetingEdits, setMeetingEdits] = useState({});
+  const [savingMeetingId, setSavingMeetingId] = useState(null);
+  const hasInitializedExpandRef = useRef(false);
 
-  const tutorSessions = sessions.filter((s) => s.role === 'tutor' || s.tutorName === 'Hannah');
+  const fetchSessions = useCallback(async (silent = false) => {
+    try {
+      const data = await apiRequest('/api/sessions/tutor');
+      if (Array.isArray(data)) {
+        setSessions(data);
+        if (!hasInitializedExpandRef.current) {
+          hasInitializedExpandRef.current = true;
+          setExpandedSessionId(data.find((s) => s.status === 'Upcoming')?.id || data[0]?.id || null);
+        }
+      }
+    } catch (err) {
+      if (!silent) {
+        showToast(err.message || 'Could not load teaching sessions.', 'error');
+      }
+    }
+  }, [showToast]);
 
-  const filteredSessions = tutorSessions.filter((s) => {
+  useEffect(() => {
+    fetchSessions(false);
+    const intervalId = window.setInterval(() => {
+      fetchSessions(true);
+    }, 4000);
+    return () => window.clearInterval(intervalId);
+  }, [fetchSessions]);
+
+  const filteredSessions = sessions.filter((s) => {
     if (activeTab === 'Upcoming') return s.status === 'Upcoming';
     if (activeTab === 'Completed') return s.status === 'Completed';
     if (activeTab === 'Cancelled') return s.status === 'Cancelled';
     return true;
   });
 
-  const handleToggleTopic = (sessionId, topicName) => {
-    setSessions((prev) =>
-      prev.map((s) => {
-        if (s.id === sessionId) {
-          return {
-            ...s,
-            topics: s.topics.map((t) =>
-              t.name === topicName ? { ...t, done: !t.done } : t
-            ),
-          };
-        }
-        return s;
-      })
-    );
+  const handleToggleTopic = async (session, topicId) => {
+    try {
+      const updatedTopic = await apiRequest(`/api/sessions/${session.rawId}/topics/${topicId}/toggle`, {
+        method: 'PATCH',
+      });
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === session.id
+            ? {
+                ...s,
+                topics: s.topics.map((t) => (t.id === topicId ? updatedTopic : t)),
+              }
+            : s
+        )
+      );
+    } catch (err) {
+      showToast(err.message || 'Could not update topic status.', 'error');
+    }
   };
 
-  const handleAddTopic = (sessionId) => {
+  const handleAddTopic = async (session) => {
     if (!newTopicInput.trim()) return;
-    setSessions((prev) =>
-      prev.map((s) => {
-        if (s.id === sessionId) {
-          return {
-            ...s,
-            topics: [...s.topics, { name: newTopicInput.trim(), done: false }],
-          };
-        }
-        return s;
-      })
-    );
+    const name = newTopicInput.trim();
     setNewTopicInput('');
+    try {
+      const created = await apiRequest(`/api/sessions/${session.rawId}/topics`, {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      });
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === session.id ? { ...s, topics: [...s.topics, created] } : s
+        )
+      );
+      showToast('Added impromptu topic.', 'success');
+    } catch (err) {
+      showToast(err.message || 'Could not add topic.', 'error');
+    }
   };
 
-  const handleSendMessage = (sessionId) => {
+  const handleSendMessage = async (session) => {
     if (!newMessage.trim()) return;
-    setSessions((prev) =>
-      prev.map((s) => {
-        if (s.id === sessionId) {
-          return {
-            ...s,
-            messages: [
-              ...s.messages,
-              { sender: 'Hannah', text: newMessage, time: 'Just now', isSelf: true },
-            ],
-          };
-        }
-        return s;
-      })
-    );
+    const text = newMessage.trim();
     setNewMessage('');
+    try {
+      const savedMsg = await apiRequest(`/api/sessions/${session.rawId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ text }),
+      });
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === session.id ? { ...s, messages: [...s.messages, savedMsg] } : s
+        )
+      );
+    } catch (err) {
+      showToast(err.message || 'Could not send message.', 'error');
+    }
+  };
+
+  const handleCompleteSession = async (session) => {
+    try {
+      await apiRequest(`/api/sessions/${session.rawId}/complete`, { method: 'PATCH' });
+      setSessions((prev) =>
+        prev.map((s) => (s.id === session.id ? { ...s, status: 'Completed' } : s))
+      );
+      showToast('Session marked as completed!', 'success');
+    } catch (err) {
+      showToast(err.message || 'Could not complete session.', 'error');
+    }
+  };
+
+  const handleSaveMeetingUrl = async (session) => {
+    const rawUrl = (meetingEdits[session.id] ?? session.meetingUrl ?? '').trim();
+    if (!isSafeHttpUrl(rawUrl)) {
+      showToast('Please enter a valid http:// or https:// meeting URL.', 'error');
+      return;
+    }
+    setSavingMeetingId(session.id);
+    try {
+      const res = await apiRequest(`/api/sessions/${session.rawId}/meeting-url`, {
+        method: 'PATCH',
+        body: JSON.stringify({ meetingUrl: rawUrl }),
+      });
+      const updatedUrl = res?.meetingUrl || rawUrl;
+      setSessions((prev) =>
+        prev.map((s) => (s.id === session.id ? { ...s, meetingUrl: updatedUrl } : s))
+      );
+      setMeetingEdits((prev) => ({ ...prev, [session.id]: updatedUrl }));
+      showToast('Meeting link updated for this session.', 'success');
+    } catch (err) {
+      showToast(err.message || 'Could not save meeting URL.', 'error');
+    } finally {
+      setSavingMeetingId(null);
+    }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header */}
       <div>
         <h1 className="text-2xl sm:text-3xl font-extrabold text-text-main tracking-tight">
@@ -85,10 +162,10 @@ export function TutorSessionsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-border-subtle/80 pb-3">
+      <div className="flex flex-wrap gap-1.5 sm:gap-2 border-b border-border-subtle/80 pb-3">
         {['Upcoming', 'Completed', 'Cancelled'].map((tab) => {
           const isActive = activeTab === tab;
-          const count = tutorSessions.filter((s) => s.status === tab).length;
+          const count = sessions.filter((s) => s.status === tab).length;
           return (
             <button
               key={tab}
@@ -132,9 +209,14 @@ export function TutorSessionsPage() {
                       <Clock className="w-5 h-5" />
                     </div>
                     <div>
-                      <h3 className="text-base font-bold text-text-main flex items-center gap-2">
+                      <h3 className="text-base font-bold text-text-main flex flex-wrap items-center gap-2">
                         {session.title}
                         <Badge variant="green">{session.status}</Badge>
+                        {session.feeInr !== undefined && (
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-card-muted text-text-main border border-border-subtle">
+                            ₹{session.feeInr}/hr
+                          </span>
+                        )}
                       </h3>
                       <p className="text-xs text-text-muted">
                         Student: <span className="font-semibold text-text-main">{session.studentName}</span> • {session.datetime}
@@ -142,7 +224,30 @@ export function TutorSessionsPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {session.status === 'Upcoming' && isSafeHttpUrl(session.meetingUrl) && (
+                      <a
+                        href={session.meetingUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-card-muted border border-border-subtle text-text-main hover:border-accent hover:text-accent text-xs font-bold transition-colors"
+                      >
+                        <Video className="w-3.5 h-3.5 text-accent" />
+                        <span>Join Meeting</span>
+                        <ExternalLink className="w-3 h-3 opacity-75" />
+                      </a>
+                    )}
+
+                    {session.status === 'Upcoming' && (
+                      <PillButton
+                        variant="primary"
+                        size="sm"
+                        onClick={() => handleCompleteSession(session)}
+                      >
+                        Mark Complete
+                      </PillButton>
+                    )}
+
                     <PillButton
                       variant="secondary"
                       size="sm"
@@ -173,10 +278,10 @@ export function TutorSessionsPage() {
                       </div>
 
                       <div className="space-y-2 bg-card-muted/50 p-4 rounded-2xl border border-border-subtle">
-                        {session.topics.map((t, idx) => (
+                        {session.topics.map((t) => (
                           <label
-                            key={idx}
-                            onClick={() => handleToggleTopic(session.id, t.name)}
+                            key={t.id}
+                            onClick={() => handleToggleTopic(session, t.id)}
                             className="flex items-center justify-between p-2 rounded-xl hover:bg-card-hover cursor-pointer transition-colors text-xs"
                           >
                             <div className="flex items-center gap-2.5">
@@ -207,11 +312,11 @@ export function TutorSessionsPage() {
                             placeholder="Add impromptu topic..."
                             value={newTopicInput}
                             onChange={(e) => setNewTopicInput(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && handleAddTopic(session.id)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleAddTopic(session)}
                             className="flex-1 px-3 py-1.5 rounded-xl bg-card border border-border-subtle text-xs"
                           />
                           <button
-                            onClick={() => handleAddTopic(session.id)}
+                            onClick={() => handleAddTopic(session)}
                             className="p-1.5 px-3 rounded-xl bg-card-muted border border-border-subtle text-xs font-bold hover:bg-card text-text-main"
                           >
                             Add
@@ -219,17 +324,76 @@ export function TutorSessionsPage() {
                         </div>
                       </div>
 
-                      {/* Completed Feedback */}
-                      {session.status === 'Completed' && (
-                        <div className="p-4 rounded-2xl bg-card-muted/70 border border-border-subtle text-xs">
-                          <span className="text-xs font-bold text-text-main block mb-1">
-                            Student Rating & Review (Read-only)
-                          </span>
-                          <div className="flex items-center gap-1 text-amber-500 font-bold mb-1">
-                            <Star className="w-3.5 h-3.5 fill-amber-400" />
-                            {session.rating}.0
+                      {/* Tutor inline Meeting Link editor for Upcoming sessions */}
+                      {session.status === 'Upcoming' && (
+                        <div className="p-3.5 sm:p-4 rounded-2xl bg-card-muted/60 border border-border-subtle space-y-2">
+                          <label className="text-[11px] font-bold uppercase tracking-wider text-text-muted flex items-center gap-1.5">
+                            <Link2 className="w-3.5 h-3.5 text-accent" /> Video Meeting Link
+                          </label>
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <input
+                              type="url"
+                              placeholder="https://meet.jit.si/peerlearn-..."
+                              value={meetingEdits[session.id] ?? session.meetingUrl ?? ''}
+                              onChange={(e) =>
+                                setMeetingEdits((prev) => ({ ...prev, [session.id]: e.target.value }))
+                              }
+                              className="flex-1 min-w-0 px-3 py-1.5 rounded-xl bg-card border border-border-subtle text-xs text-text-main focus:outline-none focus:ring-1 focus:ring-accent"
+                            />
+                            <PillButton
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              disabled={savingMeetingId === session.id}
+                              onClick={() => handleSaveMeetingUrl(session)}
+                            >
+                              {savingMeetingId === session.id ? 'Saving...' : 'Save Link'}
+                            </PillButton>
                           </div>
-                          <p className="text-text-secondary italic">"{session.ratingComment}"</p>
+                        </div>
+                      )}
+
+                      {/* Completed Feedback & Post-Class Quiz Status */}
+                      {session.status === 'Completed' && (
+                        <div className="space-y-3">
+                          {session.rating && (
+                            <div className="p-4 rounded-2xl bg-card-muted/70 border border-border-subtle text-xs">
+                              <span className="text-xs font-bold text-text-main block mb-1">
+                                Student Rating &amp; Review (Read-only)
+                              </span>
+                              <div className="flex items-center gap-1 text-amber-500 font-bold mb-1">
+                                <Star className="w-3.5 h-3.5 fill-amber-400" />
+                                {session.rating}.0
+                              </div>
+                              {session.ratingComment && (
+                                <p className="text-text-secondary italic">"{session.ratingComment}"</p>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="p-4 rounded-2xl bg-card-muted/60 border border-border-subtle text-xs space-y-1.5">
+                            <span className="text-xs font-bold text-text-main flex items-center gap-1.5">
+                              <HelpCircle className="w-3.5 h-3.5 text-accent" />
+                              Post-Class Topic Quiz Status
+                            </span>
+                            {session.postClassQuizAttempt ? (
+                              <div className="space-y-1">
+                                <p className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  {session.studentName} scored {session.postClassQuizAttempt.score}/{session.postClassQuizAttempt.totalQuestions} ({session.postClassQuizAttempt.percentage}%)
+                                </p>
+                                {session.postClassQuizAttempt.missedTopics?.length > 0 && (
+                                  <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                                    Needs review: {session.postClassQuizAttempt.missedTopics.join(', ')}
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="text-[11px] text-text-muted">
+                                Waiting for {session.studentName} to attempt the post-class topic quiz.
+                              </p>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -242,25 +406,31 @@ export function TutorSessionsPage() {
                       </div>
 
                       <div className="flex-1 p-3 overflow-y-auto space-y-2 text-xs">
-                        {session.messages.map((m, idx) => (
-                          <div
-                            key={idx}
-                            className={`flex flex-col ${m.isSelf ? 'items-end' : 'items-start'}`}
-                          >
-                            <div
-                              className={`max-w-[80%] px-3 py-2 rounded-2xl ${
-                                m.isSelf
-                                  ? 'bg-accent text-white rounded-br-none'
-                                  : 'bg-card text-text-main border border-border-subtle rounded-bl-none shadow-sm'
-                              }`}
-                            >
-                              {m.text}
-                            </div>
-                            <span className="text-[10px] text-text-muted px-1 mt-0.5">
-                              {m.time}
-                            </span>
+                        {session.messages.length === 0 ? (
+                          <div className="h-full flex items-center justify-center text-text-muted text-center px-4">
+                            No messages yet. Say hello to {session.studentName}!
                           </div>
-                        ))}
+                        ) : (
+                          session.messages.map((m, idx) => (
+                            <div
+                              key={idx}
+                              className={`flex flex-col ${m.isSelf ? 'items-end' : 'items-start'}`}
+                            >
+                              <div
+                                className={`max-w-[80%] px-3 py-2 rounded-2xl ${
+                                  m.isSelf
+                                    ? 'bg-accent text-white rounded-br-none'
+                                    : 'bg-card text-text-main border border-border-subtle rounded-bl-none shadow-sm'
+                                }`}
+                              >
+                                {m.text}
+                              </div>
+                              <span className="text-[10px] text-text-muted px-1 mt-0.5">
+                                {m.time}
+                              </span>
+                            </div>
+                          ))
+                        )}
                       </div>
 
                       <div className="p-2 border-t border-border-subtle bg-card flex gap-1.5">
@@ -269,11 +439,11 @@ export function TutorSessionsPage() {
                           placeholder="Reply to student..."
                           value={newMessage}
                           onChange={(e) => setNewMessage(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleSendMessage(session.id)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleSendMessage(session)}
                           className="flex-1 px-3 py-1.5 rounded-xl bg-card-muted border border-border-subtle text-xs focus:outline-none focus:ring-1 focus:ring-accent"
                         />
                         <button
-                          onClick={() => handleSendMessage(session.id)}
+                          onClick={() => handleSendMessage(session)}
                           className="p-2 rounded-xl bg-accent text-white hover:opacity-90"
                         >
                           <Send className="w-3.5 h-3.5" />

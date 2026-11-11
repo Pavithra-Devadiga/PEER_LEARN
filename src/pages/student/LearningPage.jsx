@@ -1,31 +1,85 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card } from '../../components/primitives/Card';
 import { PillButton } from '../../components/primitives/PillButton';
-import { placeholderData } from '../../data/placeholderData';
-import { BookOpen, CheckCircle, HelpCircle, Bookmark, BookmarkCheck, BarChart2, AlertTriangle, ArrowRight, RotateCcw } from 'lucide-react';
+import { MaterialAttachmentViewer } from '../../components/primitives/MaterialAttachmentViewer';
+import { BookOpen, HelpCircle, Bookmark, BookmarkCheck, BarChart2, AlertTriangle, RotateCcw, X, Clock, Paperclip, CheckCircle2 } from 'lucide-react';
+import { apiRequest, formatFileSize } from '../../lib/api';
+import { useToast } from '../../context/ToastContext';
 
 export function LearningPage() {
-  const content = placeholderData.learningContent;
-  const [selectedSkill, setSelectedSkill] = useState(content.skills[0]);
+  const navigate = useNavigate();
+  const { showToast } = useToast();
+  const [skills, setSkills] = useState([]);
+  const [selectedSkill, setSelectedSkill] = useState('');
   const [activeTab, setActiveTab] = useState('cheatsheets');
 
-  // Cheatsheets state
-  const [cheatsheets, setCheatsheets] = useState(content.cheatsheets);
+  const [cheatsheets, setCheatsheets] = useState([]);
+  const [activeGuide, setActiveGuide] = useState(null);
+  const [quiz, setQuiz] = useState(null);
+  const [learningProgress, setLearningProgress] = useState({
+    overallScore: '—',
+    level: 'Level 1: Getting Started',
+    weakTopics: [],
+    strongTopics: [],
+    history: [],
+  });
 
   // Quiz state
   const [currentQIndex, setCurrentQIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState(null);
+  const [answersMap, setAnswersMap] = useState({});
   const [isAnswerSubmitted, setIsAnswerSubmitted] = useState(false);
   const [score, setScore] = useState(0);
   const [quizFinished, setQuizFinished] = useState(false);
 
-  const toggleBookmark = (id) => {
-    setCheatsheets((prev) =>
-      prev.map((cs) => (cs.id === id ? { ...cs, bookmarked: !cs.bookmarked } : cs))
-    );
+  const loadHub = useCallback(async (skillName) => {
+    try {
+      const qs = skillName ? `?skill=${encodeURIComponent(skillName)}` : '';
+      const data = await apiRequest(`/api/learning${qs}`);
+      if (data) {
+        setSkills(data.skills || []);
+        setSelectedSkill(data.selectedSkill || '');
+        setCheatsheets(data.cheatsheets || []);
+        setQuiz(data.quiz || null);
+        if (data.learningProgress) setLearningProgress(data.learningProgress);
+        setCurrentQIndex(0);
+        setSelectedAnswer(null);
+        setAnswersMap({});
+        setIsAnswerSubmitted(false);
+        setScore(0);
+        setQuizFinished(false);
+      }
+    } catch (err) {
+      showToast(err.message || 'Could not load learning materials.', 'error');
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    loadHub('');
+  }, [loadHub]);
+
+  const handleSelectSkill = (skill) => {
+    setSelectedSkill(skill);
+    loadHub(skill);
   };
 
-  const currentQ = content.quiz.questions[currentQIndex];
+  const toggleBookmark = async (id) => {
+    try {
+      const res = await apiRequest(`/api/learning/materials/${id}/bookmark`, { method: 'POST' });
+      setCheatsheets((prev) =>
+        prev.map((cs) => (cs.id === id ? { ...cs, bookmarked: res.bookmarked } : cs))
+      );
+      setActiveGuide((prev) =>
+        prev && prev.id === id ? { ...prev, bookmarked: res.bookmarked } : prev
+      );
+      showToast(res.bookmarked ? 'Saved guide to bookmarks.' : 'Removed from bookmarks.', 'info');
+    } catch (err) {
+      showToast(err.message || 'Could not update bookmark.', 'error');
+    }
+  };
+
+  const currentQ = quiz?.questions?.[currentQIndex];
 
   const handleSelectOption = (idx) => {
     if (isAnswerSubmitted) return;
@@ -33,26 +87,41 @@ export function LearningPage() {
   };
 
   const handleSubmitAnswer = () => {
-    if (selectedAnswer === null) return;
+    if (selectedAnswer === null || !currentQ) return;
     setIsAnswerSubmitted(true);
+    setAnswersMap((prev) => ({ ...prev, [currentQ.id]: selectedAnswer }));
     if (selectedAnswer === currentQ.correctIndex) {
       setScore((s) => s + 1);
     }
   };
 
-  const handleNextQuestion = () => {
-    if (currentQIndex + 1 < content.quiz.questions.length) {
+  const handleNextQuestion = async () => {
+    if (!quiz?.questions) return;
+    if (currentQIndex + 1 < quiz.questions.length) {
       setCurrentQIndex((i) => i + 1);
       setSelectedAnswer(null);
       setIsAnswerSubmitted(false);
     } else {
       setQuizFinished(true);
+      try {
+        const res = await apiRequest(`/api/learning/quizzes/${quiz.id}/attempt`, {
+          method: 'POST',
+          body: JSON.stringify({ answers: answersMap }),
+        });
+        if (res?.learningProgress) {
+          setLearningProgress(res.learningProgress);
+        }
+        showToast('Quiz submitted and saved to your analytics.', 'success');
+      } catch (err) {
+        showToast(err.message || 'Could not record quiz attempt.', 'error');
+      }
     }
   };
 
   const handleRestartQuiz = () => {
     setCurrentQIndex(0);
     setSelectedAnswer(null);
+    setAnswersMap({});
     setIsAnswerSubmitted(false);
     setScore(0);
     setQuizFinished(false);
@@ -61,7 +130,7 @@ export function LearningPage() {
   return (
     <div className="space-y-6">
       {/* Header & Skill Picker */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="space-y-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-text-main tracking-tight">
             Learning Hub
@@ -72,11 +141,11 @@ export function LearningPage() {
         </div>
 
         {/* Skill Selector */}
-        <div className="flex items-center gap-2">
-          {content.skills.map((skill) => (
+        <div className="flex flex-wrap items-center gap-2">
+          {skills.map((skill) => (
             <button
               key={skill}
-              onClick={() => setSelectedSkill(skill)}
+              onClick={() => handleSelectSkill(skill)}
               className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
                 selectedSkill === skill
                   ? 'bg-accent text-white shadow-sm'
@@ -90,7 +159,7 @@ export function LearningPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-border-subtle/80 pb-3">
+      <div className="flex flex-wrap gap-1.5 sm:gap-2 border-b border-border-subtle/80 pb-3">
         {[
           { id: 'cheatsheets', label: 'Cheatsheets & Notes', icon: BookOpen },
           { id: 'quiz', label: 'Interactive Quiz', icon: HelpCircle },
@@ -102,7 +171,7 @@ export function LearningPage() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-2 ${
+              className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 sm:gap-2 ${
                 isActive
                   ? 'bg-accent text-white shadow-sm'
                   : 'bg-card text-text-secondary hover:text-text-main border border-border-subtle'
@@ -118,51 +187,79 @@ export function LearningPage() {
       {/* Tab 1: Cheatsheets */}
       {activeTab === 'cheatsheets' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {cheatsheets.map((cs) => (
-            <Card key={cs.id} className="flex flex-col justify-between p-6">
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-accent-muted text-accent">
-                    {cs.badge}
-                  </span>
-                  <button
-                    onClick={() => toggleBookmark(cs.id)}
-                    className="p-1 rounded-full text-text-muted hover:text-accent transition-colors"
-                  >
-                    {cs.bookmarked ? (
-                      <BookmarkCheck className="w-4 h-4 text-accent fill-accent" />
-                    ) : (
-                      <Bookmark className="w-4 h-4" />
+          {cheatsheets.length === 0 ? (
+            <Card className="md:col-span-3 p-8 text-center text-sm text-text-muted">
+              No study materials published for {selectedSkill || 'this skill'} yet.
+            </Card>
+          ) : (
+            cheatsheets.map((cs) => (
+              <Card key={cs.id} className="flex flex-col justify-between p-6">
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-accent-muted text-accent">
+                      {cs.badge}
+                    </span>
+                    <button
+                      onClick={() => toggleBookmark(cs.id)}
+                      className="p-1 rounded-full text-text-muted hover:text-accent transition-colors"
+                    >
+                      {cs.bookmarked ? (
+                        <BookmarkCheck className="w-4 h-4 text-accent fill-accent" />
+                      ) : (
+                        <Bookmark className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                  <h3 className="text-base font-bold text-text-main mb-2">
+                    {cs.title}
+                  </h3>
+                  <p className="text-xs text-text-secondary leading-relaxed mb-3 line-clamp-3">
+                    {cs.content}
+                  </p>
+                  {cs.attachment && (
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-card-muted border border-border-subtle text-[11px] font-semibold text-text-main mb-3 max-w-full">
+                      <Paperclip className="w-3 h-3 text-accent shrink-0" />
+                      <span className="truncate">{cs.attachment.name}</span>
+                      <span className="text-text-muted shrink-0">({formatFileSize(cs.attachment.size)})</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-3 border-t border-border-subtle/60 flex items-center justify-between text-xs text-text-muted">
+                  <div className="flex items-center gap-2">
+                    <span>{cs.readTime}</span>
+                    {cs.verifiedCount > 0 && (
+                      <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                        <CheckCircle2 className="w-3 h-3" /> {cs.verifiedCount}
+                      </span>
                     )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveGuide(cs)}
+                    className="text-accent font-semibold flex items-center gap-1 hover:underline"
+                  >
+                    Read Guide →
                   </button>
                 </div>
-                <h3 className="text-base font-bold text-text-main mb-2">
-                  {cs.title}
-                </h3>
-                <p className="text-xs text-text-secondary leading-relaxed mb-4">
-                  {cs.content}
-                </p>
-              </div>
-
-              <div className="pt-3 border-t border-border-subtle/60 flex items-center justify-between text-xs text-text-muted">
-                <span>{cs.readTime}</span>
-                <span className="text-accent font-semibold flex items-center gap-1 cursor-pointer hover:underline">
-                  Read Guide →
-                </span>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            ))
+          )}
         </div>
       )}
 
       {/* Tab 2: Interactive Quiz */}
       {activeTab === 'quiz' && (
         <Card className="max-w-2xl mx-auto p-6 sm:p-8">
-          {!quizFinished ? (
+          {!quiz || !quiz.questions || quiz.questions.length === 0 ? (
+            <div className="text-center py-8 text-sm text-text-muted">
+              No quiz available for {selectedSkill || 'this skill'} yet.
+            </div>
+          ) : !quizFinished ? (
             <div className="space-y-6">
               <div className="flex items-center justify-between pb-3 border-b border-border-subtle">
                 <span className="text-xs font-bold uppercase tracking-wider text-accent">
-                  Question {currentQIndex + 1} of {content.quiz.questions.length}
+                  Question {currentQIndex + 1} of {quiz.questions.length}
                 </span>
                 <span className="text-xs text-text-muted font-semibold">
                   Score: {score}/{currentQIndex}
@@ -225,7 +322,7 @@ export function LearningPage() {
                   </PillButton>
                 ) : (
                   <PillButton variant="primary" onClick={handleNextQuestion}>
-                    {currentQIndex + 1 < content.quiz.questions.length ? 'Next Question →' : 'See Results'}
+                    {currentQIndex + 1 < quiz.questions.length ? 'Next Question →' : 'See Results'}
                   </PillButton>
                 )}
               </div>
@@ -233,13 +330,13 @@ export function LearningPage() {
           ) : (
             <div className="text-center py-6 space-y-4">
               <div className="w-16 h-16 rounded-full bg-accent-muted text-accent flex items-center justify-center mx-auto text-2xl font-extrabold">
-                {score}/{content.quiz.questions.length}
+                {score}/{quiz.questions.length}
               </div>
               <h2 className="text-2xl font-extrabold text-text-main">
                 Quiz Complete!
               </h2>
               <p className="text-xs sm:text-sm text-text-secondary max-w-sm mx-auto">
-                You scored {Math.round((score / content.quiz.questions.length) * 100)}%! Your learning profile has been updated.
+                You scored {Math.round((score / quiz.questions.length) * 100)}%! Your learning profile has been updated.
               </p>
               <PillButton
                 variant="secondary"
@@ -267,11 +364,11 @@ export function LearningPage() {
                   Calculated Skill Level
                 </div>
                 <div className="text-xl font-extrabold text-text-main mt-0.5">
-                  {content.learningProgress.level}
+                  {learningProgress.level}
                 </div>
               </div>
               <div className="text-3xl font-black text-accent">
-                {content.learningProgress.overallScore}
+                {learningProgress.overallScore}
               </div>
             </div>
 
@@ -279,18 +376,22 @@ export function LearningPage() {
               <div className="text-xs font-bold uppercase tracking-wider text-text-muted">
                 Recent Quiz History
               </div>
-              {content.learningProgress.history.map((h, i) => (
-                <div
-                  key={i}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-card-muted/60 text-xs"
-                >
-                  <span className="font-semibold text-text-main">{h.quiz}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-text-muted">{h.date}</span>
-                    <span className="font-bold text-accent">{h.score}</span>
+              {learningProgress.history.length === 0 ? (
+                <p className="text-xs text-text-muted py-2">Take a quiz to track your scores here.</p>
+              ) : (
+                learningProgress.history.map((h, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between p-2.5 rounded-xl bg-card-muted/60 text-xs"
+                  >
+                    <span className="font-semibold text-text-main">{h.quiz}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-text-muted">{h.date}</span>
+                      <span className="font-bold text-accent">{h.score}</span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </Card>
 
@@ -302,17 +403,24 @@ export function LearningPage() {
               <div className="text-xs font-semibold text-text-muted">
                 Frequently Missed Topics:
               </div>
-              {content.learningProgress.weakTopics.map((topic, i) => (
-                <div
-                  key={i}
-                  className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs font-semibold text-amber-800 dark:text-amber-300 flex items-center justify-between"
-                >
-                  <span>{topic}</span>
-                  <span className="text-[10px] underline cursor-pointer">
-                    Book Tutor Session
-                  </span>
-                </div>
-              ))}
+              {learningProgress.weakTopics.length === 0 ? (
+                <p className="text-xs text-text-muted py-1">No weak topics detected yet.</p>
+              ) : (
+                learningProgress.weakTopics.map((topic, i) => (
+                  <div
+                    key={i}
+                    className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs font-semibold text-amber-800 dark:text-amber-300 flex items-center justify-between"
+                  >
+                    <span>{topic}</span>
+                    <span
+                      onClick={() => navigate(`/student/tutors?skill=${encodeURIComponent(selectedSkill)}`)}
+                      className="text-[10px] underline cursor-pointer"
+                    >
+                      Book Tutor Session
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
 
             <div className="space-y-2 pt-2">
@@ -320,17 +428,84 @@ export function LearningPage() {
                 Solid Grasp:
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {content.learningProgress.strongTopics.map((topic, i) => (
-                  <span
-                    key={i}
-                    className="px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-xs font-medium border border-emerald-500/20"
-                  >
-                    ✓ {topic}
-                  </span>
-                ))}
+                {learningProgress.strongTopics.length === 0 ? (
+                  <span className="text-xs text-text-muted">Complete quizzes to identify strong topics.</span>
+                ) : (
+                  learningProgress.strongTopics.map((topic, i) => (
+                    <span
+                      key={i}
+                      className="px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-xs font-medium border border-emerald-500/20"
+                    >
+                      ✓ {topic}
+                    </span>
+                  ))
+                )}
               </div>
             </div>
           </Card>
+        </div>
+      )}
+
+      {/* Interactive Study Guide Reader Modal */}
+      {activeGuide && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4"
+          onClick={() => setActiveGuide(null)}
+        >
+          <div
+            className="w-full max-w-2xl bg-card rounded-3xl shadow-2xl border border-border-card p-6 sm:p-8 relative max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setActiveGuide(null)}
+              aria-label="Close guide"
+              className="absolute top-5 right-5 p-2 rounded-full hover:bg-card-muted text-text-muted hover:text-text-main"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex flex-wrap items-center gap-2 mb-3 pr-10">
+              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-accent-muted text-accent">
+                {activeGuide.badge}
+              </span>
+              {activeGuide.readTime && (
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-text-muted">
+                  <Clock className="w-3.5 h-3.5" /> {activeGuide.readTime}
+                </span>
+              )}
+              {selectedSkill && (
+                <span className="text-xs font-semibold text-text-muted">
+                  • {selectedSkill}
+                </span>
+              )}
+            </div>
+
+            <h2 className="text-xl sm:text-2xl font-extrabold text-text-main mb-4 pr-8">
+              {activeGuide.title}
+            </h2>
+
+            <div className="flex-1 overflow-y-auto pr-2 py-3 border-y border-border-subtle/70">
+              <div className="text-xs sm:text-sm text-text-secondary leading-relaxed whitespace-pre-line font-normal">
+                {activeGuide.content}
+              </div>
+              <MaterialAttachmentViewer attachment={activeGuide.attachment} />
+            </div>
+
+            <div className="pt-4 flex flex-wrap items-center justify-between gap-3">
+              <PillButton
+                variant="secondary"
+                size="sm"
+                icon={activeGuide.bookmarked ? BookmarkCheck : Bookmark}
+                onClick={() => toggleBookmark(activeGuide.id)}
+              >
+                {activeGuide.bookmarked ? 'Bookmarked' : 'Bookmark Guide'}
+              </PillButton>
+              <PillButton variant="primary" size="sm" onClick={() => setActiveGuide(null)}>
+                Close Reader
+              </PillButton>
+            </div>
+          </div>
         </div>
       )}
     </div>

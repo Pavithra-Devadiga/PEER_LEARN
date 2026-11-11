@@ -1,26 +1,38 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card } from '../../components/primitives/Card';
 import { StatCard } from '../../components/primitives/StatCard';
-import { placeholderData } from '../../data/placeholderData';
-import { Star, TrendingUp, Calendar, Filter } from 'lucide-react';
+import { Star, Calendar } from 'lucide-react';
+import { apiRequest } from '../../lib/api';
 
 export function InsightsPage() {
-  const [filterSkill, setFilterSkill] = useState('all');
-  const reviews = placeholderData.tutor.recentReviews;
+  const [insights, setInsights] = useState({
+    avgRating: '—',
+    totalReviews: 0,
+    completionRate: '100%',
+    repeatStudentsPct: '0%',
+    repeatStudentCount: 0,
+    ratingDistribution: [
+      { stars: 5, percentage: 0, count: 0 },
+      { stars: 4, percentage: 0, count: 0 },
+      { stars: 3, percentage: 0, count: 0 },
+      { stars: 2, percentage: 0, count: 0 },
+      { stars: 1, percentage: 0, count: 0 },
+    ],
+    mostBookedSlots: [],
+    reviews: [],
+  });
 
-  const ratingDistribution = [
-    { stars: 5, percentage: 89, count: 17 },
-    { stars: 4, percentage: 11, count: 2 },
-    { stars: 3, percentage: 0, count: 0 },
-    { stars: 2, percentage: 0, count: 0 },
-    { stars: 1, percentage: 0, count: 0 },
-  ];
-
-  const mostBookedSlots = [
-    { slot: 'Tuesday 4:00 PM', bookings: 12, skill: 'Python' },
-    { slot: 'Thursday 5:30 PM', bookings: 6, skill: 'Guitar' },
-    { slot: 'Friday 6:00 PM', bookings: 4, skill: 'React' },
-  ];
+  useEffect(() => {
+    let active = true;
+    apiRequest('/api/tutor/insights')
+      .then((res) => {
+        if (active && res) setInsights(res);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -36,10 +48,10 @@ export function InsightsPage() {
 
       {/* Overview Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <StatCard value="4.8" label="Average Rating" hint="Based on 19 ratings" />
-        <StatCard value="100%" label="Completion Rate" hint="Zero tutor cancellations" />
-        <StatCard value="82%" label="Repeat Students" hint="7 students booked again" />
-        <StatCard value="35 min" label="Avg Response" hint="Fast booking replies" />
+        <StatCard value={insights.avgRating} label="Average Rating" hint={`Based on ${insights.totalReviews} ratings`} />
+        <StatCard value={insights.completionRate} label="Completion Rate" hint="Completed vs cancelled" />
+        <StatCard value={insights.repeatStudentsPct} label="Repeat Students" hint={`${insights.repeatStudentCount} students booked again`} />
+        <StatCard value={String(insights.totalReviews)} label="Total Reviews" hint="Verified student feedback" />
       </div>
 
       {/* Grid: Rating Breakdown & Top Booking Slots */}
@@ -51,7 +63,7 @@ export function InsightsPage() {
           </h2>
 
           <div className="space-y-2.5">
-            {ratingDistribution.map((row) => (
+            {insights.ratingDistribution.map((row) => (
               <div key={row.stars} className="flex items-center gap-3 text-xs">
                 <span className="w-8 font-bold text-text-secondary flex items-center gap-0.5">
                   {row.stars} <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
@@ -70,7 +82,7 @@ export function InsightsPage() {
           </div>
 
           <div className="p-3.5 rounded-2xl bg-card-muted/50 border border-border-subtle text-xs text-text-muted mt-2">
-            <span className="font-bold text-text-main">Top Praise:</span> "Clear explanations", "Very patient with edge cases", "Great analogies".
+            <span className="font-bold text-text-main">Summary:</span> Ratings are aggregated live from student feedback stored in your RDBMS `reviews` table.
           </div>
         </Card>
 
@@ -80,25 +92,31 @@ export function InsightsPage() {
             <Calendar className="w-4 h-4 text-accent" /> Most Booked Weekly Hours
           </h2>
 
-          <div className="space-y-3">
-            {mostBookedSlots.map((item, i) => (
-              <div
-                key={i}
-                className="flex items-center justify-between p-3.5 rounded-2xl bg-card-muted/60 border border-border-subtle/80 text-xs"
-              >
-                <div>
-                  <div className="font-bold text-text-main">{item.slot}</div>
-                  <div className="text-[11px] text-text-muted">{item.skill}</div>
+          {insights.mostBookedSlots.length === 0 ? (
+            <div className="p-6 text-center text-xs text-text-muted">
+              Slot demand analytics will appear once you have booked sessions.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {insights.mostBookedSlots.map((item, i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-between p-3.5 rounded-2xl bg-card-muted/60 border border-border-subtle/80 text-xs"
+                >
+                  <div>
+                    <div className="font-bold text-text-main">{item.slot}</div>
+                    <div className="text-[11px] text-text-muted">{item.skill}</div>
+                  </div>
+                  <span className="font-bold text-accent px-3 py-1 rounded-full bg-accent-muted">
+                    {item.bookings} session{item.bookings === 1 ? '' : 's'}
+                  </span>
                 </div>
-                <span className="font-bold text-accent px-3 py-1 rounded-full bg-accent-muted">
-                  {item.bookings} sessions
-                </span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
 
           <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-800 dark:text-emerald-300">
-            <span className="font-bold">Demand Tip:</span> Students frequently look for slots between 4 PM - 6 PM on Tuesdays.
+            <span className="font-bold">Demand Tip:</span> Keep your weekly availability drawer updated so students can discover open slots.
           </div>
         </Card>
       </div>
@@ -107,34 +125,40 @@ export function InsightsPage() {
       <Card className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold text-text-main">Student Reviews</h2>
-          <span className="text-xs text-text-muted font-semibold">19 reviews total</span>
+          <span className="text-xs text-text-muted font-semibold">{insights.totalReviews} reviews total</span>
         </div>
 
-        <div className="space-y-3">
-          {reviews.map((rev) => (
-            <div
-              key={rev.id}
-              className="p-4 rounded-2xl bg-card-muted/50 border border-border-subtle text-xs space-y-1.5"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-text-main">{rev.student}</span>
-                  <span className="px-2 py-0.5 rounded-full bg-card text-text-muted border border-border-subtle text-[10px] font-semibold">
-                    {rev.skill}
-                  </span>
+        {insights.reviews.length === 0 ? (
+          <div className="p-6 text-center text-xs text-text-muted">
+            No student reviews recorded yet.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {insights.reviews.map((rev) => (
+              <div
+                key={rev.id}
+                className="p-4 rounded-2xl bg-card-muted/50 border border-border-subtle text-xs space-y-1.5"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-text-main">{rev.student}</span>
+                    <span className="px-2 py-0.5 rounded-full bg-card text-text-muted border border-border-subtle text-[10px] font-semibold">
+                      {rev.skill}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 font-bold text-amber-500">
+                    <Star className="w-3.5 h-3.5 fill-amber-400" />
+                    {rev.rating}.0
+                  </div>
                 </div>
-                <div className="flex items-center gap-1 font-bold text-amber-500">
-                  <Star className="w-3.5 h-3.5 fill-amber-400" />
-                  {rev.rating}.0
-                </div>
+                <p className="text-text-secondary leading-relaxed">
+                  "{rev.comment}"
+                </p>
+                <div className="text-[10px] text-text-muted pt-1">{rev.date}</div>
               </div>
-              <p className="text-text-secondary leading-relaxed">
-                "{rev.comment}"
-              </p>
-              <div className="text-[10px] text-text-muted pt-1">{rev.date}</div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   );

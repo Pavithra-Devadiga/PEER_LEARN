@@ -1,22 +1,13 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { apiRequest, getAuthToken, setAuthToken } from '../lib/api';
 
 const ModeThemeContext = createContext();
-
-// ============================================================================
-// ⚙️ DEV CONFIG: AUTH BYPASS SWITCH
-// When false, real Supabase authentication is active!
-// If you want to temporarily skip login during dev without credentials,
-// you can click the floating pill at bottom-right or call window.__toggleAuthBypass()
-// ============================================================================
-const DEFAULT_BYPASS_AUTH = false;
 
 export function ModeThemeProvider({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Mode: 'student' | 'tutor'
   const [mode, setModeState] = useState(() => {
     const saved = localStorage.getItem('peerlearn_mode');
     if (saved === 'student' || saved === 'tutor') return saved;
@@ -24,7 +15,6 @@ export function ModeThemeProvider({ children }) {
     return 'student';
   });
 
-  // Theme: 'light' | 'dark'
   const [theme, setThemeState] = useState(() => {
     const saved = localStorage.getItem('peerlearn_theme');
     if (saved === 'light' || saved === 'dark') return saved;
@@ -34,16 +24,10 @@ export function ModeThemeProvider({ children }) {
     return 'light';
   });
 
-  // Auth Bypass Switch (defaults to false for real auth testing)
-  const [authBypass, setAuthBypassState] = useState(() => {
-    const saved = localStorage.getItem('peerlearn_auth_bypass');
-    return saved === 'true' && DEFAULT_BYPASS_AUTH;
-  });
-
-  // User state
   const [user, setUser] = useState(() => {
+    const token = getAuthToken();
     const savedUser = localStorage.getItem('peerlearn_user');
-    if (savedUser) {
+    if (token && savedUser) {
       try {
         return JSON.parse(savedUser);
       } catch (e) {}
@@ -52,108 +36,109 @@ export function ModeThemeProvider({ children }) {
   });
 
   const [authLoading, setAuthLoading] = useState(true);
+  const [badges, setBadges] = useState({ studentPendingCount: 0, tutorPendingCount: 0 });
 
-  // Sync mode to DOM
   useEffect(() => {
     document.documentElement.dataset.mode = mode;
     localStorage.setItem('peerlearn_mode', mode);
   }, [mode]);
 
-  // Sync theme to DOM
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('peerlearn_theme', theme);
   }, [theme]);
 
-  // Sync user & authBypass
   useEffect(() => {
-    localStorage.setItem('peerlearn_auth_bypass', String(authBypass));
-  }, [authBypass]);
-
-  useEffect(() => {
-    if (user) {
+    if (user && user.signedIn) {
       localStorage.setItem('peerlearn_user', JSON.stringify(user));
+    } else {
+      localStorage.removeItem('peerlearn_user');
     }
   }, [user]);
 
-  // Helper to format Supabase user into app user model
-  const formatUser = (sbUser) => {
-    if (!sbUser) return { signedIn: false };
-    const fullName = sbUser.user_metadata?.full_name || sbUser.email?.split('@')[0] || 'User';
-    return {
-      id: sbUser.id,
-      email: sbUser.email,
-      name: fullName,
-      avatar: sbUser.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(fullName)}`,
-      initials: fullName.charAt(0).toUpperCase(),
-      signedIn: true,
-    };
-  };
+  const refreshBadges = useCallback(async () => {
+    if (!getAuthToken()) return;
+    try {
+      const data = await apiRequest('/api/dashboard/badges');
+      if (data) setBadges(data);
+    } catch {
+      // ignore background badge refresh errors
+    }
+  }, []);
 
-  // Restore session from Supabase on initial load
+  const refreshProfile = useCallback(async () => {
+    if (!getAuthToken()) return null;
+    const profile = await apiRequest('/api/auth/me');
+    if (profile) {
+      setUser(profile);
+    }
+    return profile;
+  }, []);
+
   useEffect(() => {
     let mounted = true;
 
-    async function checkSession() {
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
+    async function verifySession() {
+      const token = getAuthToken();
+      if (!token) {
         if (mounted) {
-          if (session?.user) {
-            setUser(formatUser(session.user));
-          } else if (!authBypass) {
-            setUser({ signedIn: false });
-          }
+          setUser({ signedIn: false });
+          setAuthLoading(false);
         }
-      } catch (err) {
-        console.error('Error fetching Supabase session:', err);
+        return;
+      }
+
+      try {
+        const profile = await apiRequest('/api/auth/me');
+        if (mounted && profile) {
+          setUser(profile);
+          refreshBadges();
+        }
+      } catch {
+        if (mounted) {
+          setAuthToken(null);
+          setUser({ signedIn: false });
+        }
       } finally {
         if (mounted) setAuthLoading(false);
       }
     }
 
-    checkSession();
+    verifySession();
 
-    // Listen to real-time auth events (token refresh, sign in, sign out)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (mounted) {
-        if (session?.user) {
-          setUser(formatUser(session.user));
-        } else if (!authBypass) {
+    const handleUnauthorized = () => {
+      setAuthToken(null);
+      localStorage.removeItem('peerlearn_user');
+      setUser({ signedIn: false });
+      setBadges({ studentPendingCount: 0, tutorPendingCount: 0 });
+    };
+
+    const handleStorageSync = (e) => {
+      if (e.key === 'peerlearn_token') {
+        if (!e.newValue) {
           setUser({ signedIn: false });
+          setBadges({ studentPendingCount: 0, tutorPendingCount: 0 });
+        } else {
+          verifySession();
+        }
+      } else if (e.key === 'peerlearn_user' && e.newValue) {
+        try {
+          setUser(JSON.parse(e.newValue));
+        } catch {
+          // ignore parse error
         }
       }
-    });
+    };
 
+    window.addEventListener('peerlearn:unauthorized', handleUnauthorized);
+    window.addEventListener('storage', handleStorageSync);
     return () => {
       mounted = false;
-      subscription?.unsubscribe();
+      window.removeEventListener('peerlearn:unauthorized', handleUnauthorized);
+      window.removeEventListener('storage', handleStorageSync);
     };
-  }, [authBypass]);
+  }, [refreshBadges]);
 
-  // Expose handy console helper for you and your team:
-  useEffect(() => {
-    window.__toggleAuthBypass = () => {
-      setAuthBypassState((prev) => {
-        const next = !prev;
-        if (next && (!user || !user.signedIn)) {
-          // Provide demo user when activating bypass
-          setUser({
-            id: 'demo-user',
-            name: 'Hannah',
-            email: 'hannah.student@university.edu',
-            avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
-            initials: 'H',
-            signedIn: true,
-          });
-        }
-        console.log(`[PeerLearn Auth] Bypass mode is now: ${next ? 'ENABLED (Always logged in)' : 'DISABLED (Real Supabase Auth enforced)'}`);
-        return next;
-      });
-    };
-  }, [user]);
-
-  // Mode-prefixed route guardian
   useEffect(() => {
     const path = location.pathname;
     if (path.startsWith('/student') && mode !== 'student') {
@@ -173,85 +158,88 @@ export function ModeThemeProvider({ children }) {
     setThemeState((prev) => (prev === 'light' ? 'dark' : 'light'));
   };
 
-  const toggleAuthBypass = () => {
-    setAuthBypassState((prev) => {
-      const next = !prev;
-      if (next && (!user || !user.signedIn)) {
-        setUser({
-          id: 'demo-user',
-          name: 'Hannah',
-          email: 'hannah.student@university.edu',
-          avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
-          initials: 'H',
-          signedIn: true,
-        });
-      }
-      return next;
-    });
-  };
+  const applyAuthSession = useCallback((token, userProfile) => {
+    if (token) {
+      setAuthToken(token);
+    }
+    if (userProfile) {
+      localStorage.setItem('peerlearn_user', JSON.stringify(userProfile));
+      setUser(userProfile);
+    }
+  }, []);
 
-  // Real Supabase sign in
-  const signIn = async (credentials) => {
-    if (credentials?.email && credentials?.password) {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: credentials.email,
-        password: credentials.password,
-      });
-      if (error) throw error;
-      if (data?.user) {
-        setUser(formatUser(data.user));
-      }
-      navigate(`/${mode}/home`);
-      return data;
+  const signIn = async ({ email, password }) => {
+    if (!email || !password) {
+      throw new Error('Please enter both your email address and password.');
     }
 
-    // Demo fallback if called without credentials
-    const fallbackUser = {
-      id: 'demo-user',
-      name: 'Hannah',
-      email: 'hannah.student@university.edu',
-      avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
-      initials: 'H',
-      signedIn: true,
-    };
-    setUser(fallbackUser);
-    navigate(`/${mode}/home`);
-  };
-
-  // Real Supabase sign up
-  const signUp = async ({ name, email, password }) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: name,
-        },
-      },
+    const data = await apiRequest('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
     });
-    if (error) throw error;
-    if (data?.user && data?.session) {
-      setUser(formatUser(data.user));
+
+    if (data?.token && data?.user) {
+      applyAuthSession(data.token, data.user);
+      refreshBadges();
       navigate(`/${mode}/home`);
     }
     return data;
   };
 
-  // Real Supabase sign out
+  const signInDemo = async () => {
+    const data = await apiRequest('/api/auth/demo', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+
+    if (data?.token && data?.user) {
+      applyAuthSession(data.token, data.user);
+      refreshBadges();
+      navigate(`/${mode}/home`);
+    }
+    return data;
+  };
+
+  const signUp = async ({ name, email, password }) => {
+    const data = await apiRequest('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ name, email, password }),
+    });
+
+    if (data?.token && data?.user) {
+      applyAuthSession(data.token, data.user);
+      refreshBadges();
+      navigate(`/${mode}/home`);
+      return { ...data, session: true };
+    }
+    return data;
+  };
+
+  const updateProfile = async (payload) => {
+    const data = await apiRequest('/api/profile', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    applyAuthSession(data?.token, data?.user);
+    return data;
+  };
+
   const signOut = async () => {
     try {
-      await supabase.auth.signOut();
-    } catch (e) {
-      console.error('Supabase signOut error:', e);
+      if (getAuthToken()) {
+        await apiRequest('/api/auth/logout', { method: 'POST' });
+      }
+    } catch {
+      // still clear client session even if server unreachable
     }
-    setAuthBypassState(false);
+    setAuthToken(null);
     setUser({ signedIn: false });
+    setBadges({ studentPendingCount: 0, tutorPendingCount: 0 });
     localStorage.removeItem('peerlearn_user');
     navigate('/');
   };
 
-  // Effective authenticated status (True if bypass is enabled OR if user is signed in)
-  const isAuthenticated = authBypass || Boolean(user?.signedIn);
+  const isAuthenticated = Boolean(user?.signedIn);
 
   return (
     <ModeThemeContext.Provider
@@ -263,12 +251,15 @@ export function ModeThemeProvider({ children }) {
         user,
         setUser,
         isAuthenticated,
-        authBypass,
-        toggleAuthBypass,
         authLoading,
+        badges,
+        refreshBadges,
+        refreshProfile,
         signOut,
         signIn,
+        signInDemo,
         signUp,
+        updateProfile,
       }}
     >
       {children}

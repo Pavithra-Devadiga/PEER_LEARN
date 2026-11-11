@@ -7,6 +7,7 @@ import { AppShell } from './components/primitives/AppShell';
 import { LandingPage } from './pages/shared/LandingPage';
 import { LoginPage } from './pages/shared/LoginPage';
 import { RegisterPage } from './pages/shared/RegisterPage';
+import { ResetPasswordPage } from './pages/shared/ResetPasswordPage';
 import { ProfilePage } from './pages/shared/ProfilePage';
 
 // Student Mode Pages
@@ -24,11 +25,17 @@ import { TutorSessionsPage } from './pages/tutor/TutorSessionsPage';
 import { ContributePage } from './pages/tutor/ContributePage';
 import { InsightsPage } from './pages/tutor/InsightsPage';
 
-// Protected Route Guard
 function ProtectedRoute({ children }) {
-  const { isAuthenticated, mode } = useModeTheme();
+  const { isAuthenticated, authLoading } = useModeTheme();
 
-  // If auth is enabled and user is not authenticated, redirect to /login
+  if (authLoading) {
+    return (
+      <div className="flex-1 flex items-center justify-center py-20 text-sm text-text-muted font-medium">
+        Loading your workspace...
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
@@ -47,10 +54,17 @@ export default function App() {
           path="/"
           element={isAuthenticated ? <Navigate to={`/${mode}/home`} replace /> : <LandingPage />}
         />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
+        <Route
+          path="/login"
+          element={isAuthenticated ? <Navigate to={`/${mode}/home`} replace /> : <LoginPage />}
+        />
+        <Route
+          path="/register"
+          element={isAuthenticated ? <Navigate to={`/${mode}/home`} replace /> : <RegisterPage />}
+        />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
 
-        {/* Protected App Routes (Auto-bypassed when bypass is ON) */}
+        {/* Protected App Routes */}
         <Route
           path="/profile"
           element={
@@ -153,7 +167,10 @@ export default function App() {
         />
 
         {/* Catch-all redirect */}
-        <Route path="*" element={<Navigate to={`/${mode}/home`} replace />} />
+        <Route
+          path="*"
+          element={<Navigate to={isAuthenticated ? `/${mode}/home` : '/'} replace />}
+        />
       </Route>
     </Routes>
   );

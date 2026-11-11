@@ -5,6 +5,7 @@ export function TintedCard({
   subtitle,
   category,
   tutorCount,
+  priceBadge,
   icon: Icon,
   tint = 'violet',
   onClick,
@@ -85,6 +86,11 @@ export function TintedCard({
         <span className="text-xs font-semibold text-accent flex items-center gap-1 group">
           {actionLabel} <span className="transition-transform group-hover:translate-x-1">→</span>
         </span>
+        {priceBadge && (
+          <span className="text-xs font-extrabold text-text-main bg-card/85 px-2.5 py-0.5 rounded-full border border-border-subtle shadow-sm">
+            {priceBadge}
+          </span>
+        )}
       </div>
     </div>
   );

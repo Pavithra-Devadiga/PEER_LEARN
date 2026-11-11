@@ -137,3 +137,11 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-muted);
 }
+
+
+/* Prevent horizontal overflow on small phone viewports */
+html,
+body {
+  overflow-x: hidden;
+  max-width: 100%;
+}

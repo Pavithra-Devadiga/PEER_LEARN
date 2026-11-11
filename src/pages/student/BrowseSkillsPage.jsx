@@ -1,13 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Code, Palette, Globe, Music, Sparkles } from 'lucide-react';
 import { TintedCard } from '../../components/primitives/TintedCard';
-import { placeholderData } from '../../data/placeholderData';
+import { apiRequest } from '../../lib/api';
 
 export function BrowseSkillsPage() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
-  const categories = placeholderData.categories;
+  const [categories, setCategories] = useState([]);
+
+  useEffect(() => {
+    let active = true;
+    apiRequest('/api/skills/categories')
+      .then((res) => {
+        if (active && Array.isArray(res)) setCategories(res);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const iconMap = {
     Code: Code,
@@ -51,7 +63,8 @@ export function BrowseSkillsPage() {
         {categories.map((cat) => {
           const Icon = iconMap[cat.icon] || Sparkles;
           const filteredSkills = cat.skills.filter((s) =>
-            s.name.toLowerCase().includes(search.toLowerCase())
+            s.name.toLowerCase().includes(search.toLowerCase()) ||
+            s.tags.some((t) => t.toLowerCase().includes(search.toLowerCase()))
           );
 
           if (filteredSkills.length === 0) return null;
@@ -73,6 +86,7 @@ export function BrowseSkillsPage() {
                     title={skill.name}
                     subtitle={`Topics include: ${skill.tags.join(', ')}`}
                     tutorCount={skill.tutorCount}
+                    priceBadge={`From ₹${skill.startingPriceInr ?? skill.basePriceInr ?? 99}/hr`}
                     tint={cat.tint}
                     actionLabel="View Tutors"
                     onClick={() => handleSelectSkill(skill.name)}

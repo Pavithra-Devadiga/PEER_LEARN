@@ -1,36 +1,70 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useModeTheme } from '../../context/ModeThemeContext';
 import { PillButton } from './PillButton';
+import { apiRequest } from '../../lib/api';
 
 export function Calendar({
   onOpenAvailabilityDrawer,
   className = '',
 }) {
-  const { mode } = useModeTheme();
-  const [selectedDay, setSelectedDay] = useState(4);
+  const { mode, isAuthenticated } = useModeTheme();
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [selectedDay, setSelectedDay] = useState(now.getDate());
+  const [calData, setCalData] = useState({
+    monthLabel: now.toLocaleString('en-US', { month: 'short', year: 'numeric' }),
+    daysInMonth: new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(),
+    sessionDays: [],
+    freeDays: [],
+    bookedDays: [],
+    requestDays: [],
+    upcomingItems: [],
+  });
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let active = true;
+    apiRequest(`/api/calendar?mode=${mode}&year=${year}&month=${month}`)
+      .then((data) => {
+        if (active && data) setCalData(data);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [mode, year, month, isAuthenticated]);
+
+  const handlePrevMonth = () => {
+    if (month === 1) {
+      setMonth(12);
+      setYear((y) => y - 1);
+    } else {
+      setMonth((m) => m - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (month === 12) {
+      setMonth(1);
+      setYear((y) => y + 1);
+    } else {
+      setMonth((m) => m + 1);
+    }
+  };
 
   const daysOfWeek = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-
-  // Days in month: 28 days for clean calendar matching wireframes
-  const days = Array.from({ length: 28 }, (_, i) => i + 1);
-
-  // Student mode session days
-  const studentSessionDays = [4, 9, 19];
-
-  // Tutor mode state days
-  const tutorFreeDays = [2, 16];
-  const tutorBookedDays = [9];
-  const tutorRequestDays = [4, 11, 18];
+  const days = Array.from({ length: calData.daysInMonth || 28 }, (_, i) => i + 1);
 
   const getDayState = (day) => {
     if (mode === 'student') {
-      if (studentSessionDays.includes(day)) return 'session';
+      if (calData.sessionDays?.includes(day)) return 'session';
       return 'normal';
     } else {
-      if (tutorBookedDays.includes(day)) return 'booked';
-      if (tutorRequestDays.includes(day)) return 'requests';
-      if (tutorFreeDays.includes(day)) return 'free';
+      if (calData.bookedDays?.includes(day)) return 'booked';
+      if (calData.requestDays?.includes(day)) return 'requests';
+      if (calData.freeDays?.includes(day)) return 'free';
       return 'normal';
     }
   };
@@ -46,11 +80,17 @@ export function Calendar({
             {mode === 'student' ? 'Calendar' : 'Availability calendar'}
           </h3>
           <div className="flex items-center gap-1 text-text-muted">
-            <span className="text-xs font-semibold mr-1 text-text-secondary">Oct 2026</span>
-            <button className="p-1 rounded-full hover:bg-card-muted text-text-secondary">
+            <span className="text-xs font-semibold mr-1 text-text-secondary">{calData.monthLabel}</span>
+            <button
+              onClick={handlePrevMonth}
+              className="p-1 rounded-full hover:bg-card-muted text-text-secondary"
+            >
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
-            <button className="p-1 rounded-full hover:bg-card-muted text-text-secondary">
+            <button
+              onClick={handleNextMonth}
+              className="p-1 rounded-full hover:bg-card-muted text-text-secondary"
+            >
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -75,7 +115,7 @@ export function Calendar({
             const isSelected = selectedDay === day;
 
             let badgeClasses =
-              'w-8 h-8 mx-auto rounded-full flex items-center justify-center text-xs font-semibold transition-all duration-150 cursor-pointer ';
+              'w-7 h-7 sm:w-8 sm:h-8 mx-auto rounded-full flex items-center justify-center text-[11px] sm:text-xs font-semibold transition-all duration-150 cursor-pointer ';
 
             if (mode === 'student') {
               if (state === 'session') {
@@ -88,7 +128,6 @@ export function Calendar({
                   : 'text-text-secondary hover:bg-card-muted hover:text-text-main';
               }
             } else {
-              // Tutor mode states
               if (state === 'booked') {
                 badgeClasses += 'bg-emerald-500 text-white font-bold shadow-sm';
               } else if (state === 'requests') {
@@ -116,7 +155,7 @@ export function Calendar({
 
         {/* Tutor Mode Legend */}
         {mode === 'tutor' && (
-          <div className="flex items-center justify-around py-2 px-1 mb-3 bg-card-muted/50 rounded-2xl text-[11px] font-semibold text-text-secondary">
+          <div className="flex flex-wrap items-center justify-around gap-2 py-2 px-2 mb-3 bg-card-muted/50 rounded-2xl text-[11px] font-semibold text-text-secondary">
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full border border-emerald-500" />
               <span>Free</span>
@@ -136,22 +175,33 @@ export function Calendar({
       {/* Under-Calendar Items */}
       <div className="space-y-2 pt-2 border-t border-border-subtle/50">
         {mode === 'student' ? (
-          <>
-            <div className="w-full py-2 px-3 rounded-2xl bg-accent-muted text-accent text-xs font-semibold flex items-center justify-between">
-              <span>Tue 4 pm, Python</span>
-              <span className="text-[10px] opacity-80">Marcus V.</span>
+          calData.upcomingItems && calData.upcomingItems.length > 0 ? (
+            calData.upcomingItems.map((item, idx) => (
+              <div
+                key={idx}
+                className={`w-full py-2 px-3 rounded-2xl text-xs font-semibold flex items-center justify-between ${
+                  item.isAccent
+                    ? 'bg-accent-muted text-accent'
+                    : 'bg-card-muted text-text-secondary font-medium'
+                }`}
+              >
+                <span className="truncate mr-2">{item.primary}</span>
+                <span className="text-[10px] opacity-80 shrink-0">{item.secondary}</span>
+              </div>
+            ))
+          ) : (
+            <div className="w-full py-2 px-3 rounded-2xl bg-card-muted text-text-muted text-xs text-center">
+              No sessions scheduled this month
             </div>
-            <div className="w-full py-2 px-3 rounded-2xl bg-card-muted text-text-secondary text-xs font-medium flex items-center justify-between">
-              <span>Fri 6 pm, Guitar</span>
-              <span className="text-[10px] opacity-80">Elena R.</span>
-            </div>
-          </>
+          )
         ) : (
           <>
-            <div className="w-full py-2 px-3 rounded-2xl bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 text-xs font-semibold flex items-center justify-between">
-              <span>Tue 4 pm, booked</span>
-              <span className="text-[10px] opacity-80">Marcus Vance</span>
-            </div>
+            {calData.upcomingItems && calData.upcomingItems.length > 0 && (
+              <div className="w-full py-2 px-3 rounded-2xl bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 text-xs font-semibold flex items-center justify-between">
+                <span className="truncate mr-2">{calData.upcomingItems[0].primary}</span>
+                <span className="text-[10px] opacity-80 shrink-0">{calData.upcomingItems[0].secondary}</span>
+              </div>
+            )}
             <PillButton
               variant="secondary"
               size="sm"

@@ -4,20 +4,28 @@ import { useModeTheme } from '../../context/ModeThemeContext';
 import { Badge } from './Badge';
 
 export function Sidebar({ className = '' }) {
-  const { mode } = useModeTheme();
+  const { mode, badges } = useModeTheme();
 
   const studentLinks = [
     { label: 'Home', path: '/student/home' },
     { label: 'Browse skills', path: '/student/browse' },
     { label: 'Tutors', path: '/student/tutors' },
-    { label: 'My sessions', path: '/student/sessions', badge: '1' },
+    {
+      label: 'My sessions',
+      path: '/student/sessions',
+      badge: badges?.studentPendingCount > 0 ? String(badges.studentPendingCount) : null,
+    },
     { label: 'Learning', path: '/student/learning' },
   ];
 
   const tutorLinks = [
     { label: 'Home', path: '/tutor/home' },
     { label: 'My skills', path: '/tutor/skills' },
-    { label: 'Requests', path: '/tutor/requests', badge: '3' },
+    {
+      label: 'Requests',
+      path: '/tutor/requests',
+      badge: badges?.tutorPendingCount > 0 ? String(badges.tutorPendingCount) : null,
+    },
     { label: 'My sessions', path: '/tutor/sessions' },
     { label: 'Contribute', path: '/tutor/contribute' },
     { label: 'Insights', path: '/tutor/insights' },
@@ -27,9 +35,9 @@ export function Sidebar({ className = '' }) {
 
   return (
     <aside
-      className={`w-56 shrink-0 py-6 px-4 flex flex-col justify-between select-none ${className}`}
+      className={`w-56 shrink-0 py-1 pr-2 flex flex-col justify-between select-none ${className}`}
     >
-      <nav className="flex flex-col gap-1.5" aria-label="Sidebar navigation">
+      <nav className="flex flex-col gap-2" aria-label="Sidebar navigation">
         {links.map((item) => (
           <NavLink
             key={item.path}

@@ -23,7 +23,7 @@ export function ModeToggle({ className = '' }) {
         role="tab"
         aria-selected={mode === 'student'}
         onClick={() => setMode('student')}
-        className={`px-3.5 py-1 text-xs sm:text-sm font-semibold rounded-full transition-all duration-200 ${
+        className={`px-2.5 sm:px-3.5 py-1 text-[11px] sm:text-sm font-semibold rounded-full transition-all duration-200 ${
           mode === 'student'
             ? 'bg-accent text-white shadow-sm'
             : 'text-text-secondary hover:text-text-main'
@@ -36,7 +36,7 @@ export function ModeToggle({ className = '' }) {
         role="tab"
         aria-selected={mode === 'tutor'}
         onClick={() => setMode('tutor')}
-        className={`px-3.5 py-1 text-xs sm:text-sm font-semibold rounded-full transition-all duration-200 ${
+        className={`px-2.5 sm:px-3.5 py-1 text-[11px] sm:text-sm font-semibold rounded-full transition-all duration-200 ${
           mode === 'tutor'
             ? 'bg-accent text-white shadow-sm'
             : 'text-text-secondary hover:text-text-main'

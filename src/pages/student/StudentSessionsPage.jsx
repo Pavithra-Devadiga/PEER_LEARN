@@ -1,20 +1,54 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Card } from '../../components/primitives/Card';
 import { PillButton } from '../../components/primitives/PillButton';
 import { Badge } from '../../components/primitives/Badge';
-import { placeholderData } from '../../data/placeholderData';
-import { Send, Star, ChevronDown, CheckCircle, Clock, MessageSquare, AlertCircle } from 'lucide-react';
+import { Send, Star, ChevronDown, Clock, MessageSquare, AlertCircle, Video, ExternalLink, HelpCircle, CheckCircle2 } from 'lucide-react';
+import { apiRequest } from '../../lib/api';
+import { useModeTheme } from '../../context/ModeThemeContext';
+import { useToast } from '../../context/ToastContext';
+import { PostClassQuizModal } from '../../components/primitives/PostClassQuizModal';
+
+function isSafeHttpUrl(url) {
+  return typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'));
+}
 
 export function StudentSessionsPage() {
+  const { refreshBadges } = useModeTheme();
+  const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState('Upcoming');
-  const [sessions, setSessions] = useState(placeholderData.sessions);
-  const [expandedSessionId, setExpandedSessionId] = useState('sess-101');
+  const [sessions, setSessions] = useState([]);
+  const [expandedSessionId, setExpandedSessionId] = useState(null);
   const [newMessage, setNewMessage] = useState('');
   const [ratedSessions, setRatedSessions] = useState({});
+  const [quizSession, setQuizSession] = useState(null);
+  const hasInitializedExpandRef = useRef(false);
 
-  const studentSessions = sessions.filter((s) => s.role === 'student' || s.studentName === 'Hannah');
+  const fetchSessions = useCallback(async (silent = false) => {
+    try {
+      const data = await apiRequest('/api/sessions/student');
+      if (Array.isArray(data)) {
+        setSessions(data);
+        if (!hasInitializedExpandRef.current) {
+          hasInitializedExpandRef.current = true;
+          setExpandedSessionId(data.find((s) => s.status === 'Upcoming')?.id || data[0]?.id || null);
+        }
+      }
+    } catch (err) {
+      if (!silent) {
+        showToast(err.message || 'Could not load sessions.', 'error');
+      }
+    }
+  }, [showToast]);
 
-  const filteredSessions = studentSessions.filter((s) => {
+  useEffect(() => {
+    fetchSessions(false);
+    const intervalId = window.setInterval(() => {
+      fetchSessions(true);
+    }, 4000);
+    return () => window.clearInterval(intervalId);
+  }, [fetchSessions]);
+
+  const filteredSessions = sessions.filter((s) => {
     if (activeTab === 'Pending') return s.status === 'Pending';
     if (activeTab === 'Upcoming') return s.status === 'Upcoming';
     if (activeTab === 'Completed') return s.status === 'Completed';
@@ -22,37 +56,61 @@ export function StudentSessionsPage() {
     return true;
   });
 
-  const handleSendMessage = (sessionId) => {
+  const handleSendMessage = async (session) => {
     if (!newMessage.trim()) return;
-    setSessions((prev) =>
-      prev.map((s) => {
-        if (s.id === sessionId) {
-          return {
-            ...s,
-            messages: [
-              ...s.messages,
-              { sender: 'Hannah', text: newMessage, time: 'Just now', isSelf: true },
-            ],
-          };
-        }
-        return s;
-      })
-    );
+    const text = newMessage.trim();
     setNewMessage('');
+    try {
+      const savedMsg = await apiRequest(`/api/sessions/${session.rawId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ text }),
+      });
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === session.id
+            ? { ...s, messages: [...s.messages, savedMsg] }
+            : s
+        )
+      );
+    } catch (err) {
+      showToast(err.message || 'Could not send message.', 'error');
+    }
   };
 
-  const handleCancelSession = (sessionId) => {
-    setSessions((prev) =>
-      prev.map((s) => (s.id === sessionId ? { ...s, status: 'Cancelled' } : s))
-    );
+  const handleCancelSession = async (session) => {
+    try {
+      await apiRequest(`/api/sessions/${session.rawId}/cancel`, { method: 'PATCH' });
+      setSessions((prev) =>
+        prev.map((s) => (s.id === session.id ? { ...s, status: 'Cancelled' } : s))
+      );
+      showToast('Session cancelled.', 'info');
+    } catch (err) {
+      showToast(err.message || 'Could not cancel session.', 'error');
+    }
   };
 
-  const handleWithdrawPending = (sessionId) => {
-    setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+  const handleWithdrawPending = async (session) => {
+    try {
+      await apiRequest(`/api/requests/${session.rawId}`, { method: 'DELETE' });
+      setSessions((prev) => prev.filter((s) => s.id !== session.id));
+      refreshBadges();
+      showToast('Request withdrawn.', 'info');
+    } catch (err) {
+      showToast(err.message || 'Could not withdraw request.', 'error');
+    }
   };
 
-  const handleRate = (sessionId, stars) => {
-    setRatedSessions((prev) => ({ ...prev, [sessionId]: stars }));
+  const handleRate = async (session, stars) => {
+    try {
+      await apiRequest(`/api/sessions/${session.rawId}/rate`, {
+        method: 'POST',
+        body: JSON.stringify({ rating: stars }),
+      });
+      setRatedSessions((prev) => ({ ...prev, [session.id]: stars }));
+      showToast(`Recorded ${stars}-star rating for ${session.tutorName}.`, 'success');
+    } catch (err) {
+      showToast(err.message || 'Could not submit rating.', 'error');
+    }
   };
 
   return (
@@ -68,10 +126,10 @@ export function StudentSessionsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-border-subtle/80 pb-3">
+      <div className="flex flex-wrap gap-1.5 sm:gap-2 border-b border-border-subtle/80 pb-3">
         {['Upcoming', 'Pending', 'Completed', 'Cancelled'].map((tab) => {
           const isActive = activeTab === tab;
-          const count = studentSessions.filter((s) =>
+          const count = sessions.filter((s) =>
             tab === 'Cancelled'
               ? s.status === 'Cancelled' || s.status === 'Rejected'
               : s.status === tab
@@ -120,7 +178,7 @@ export function StudentSessionsPage() {
                       <Clock className="w-5 h-5" />
                     </div>
                     <div>
-                      <h3 className="text-base font-bold text-text-main flex items-center gap-2">
+                      <h3 className="text-base font-bold text-text-main flex flex-wrap items-center gap-2">
                         {session.title}
                         <Badge
                           variant={
@@ -133,6 +191,11 @@ export function StudentSessionsPage() {
                         >
                           {session.status}
                         </Badge>
+                        {session.feeInr !== undefined && (
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-card-muted text-text-main border border-border-subtle">
+                            ₹{session.feeInr}/hr
+                          </span>
+                        )}
                       </h3>
                       <p className="text-xs text-text-muted">
                         With <span className="font-semibold text-text-main">{session.tutorName}</span> • {session.datetime}
@@ -140,12 +203,25 @@ export function StudentSessionsPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {session.status === 'Upcoming' && isSafeHttpUrl(session.meetingUrl) && (
+                      <a
+                        href={session.meetingUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-accent text-white text-xs font-bold shadow-sm hover:opacity-95 transition-opacity"
+                      >
+                        <Video className="w-3.5 h-3.5" />
+                        <span>Join Meeting</span>
+                        <ExternalLink className="w-3 h-3 opacity-80" />
+                      </a>
+                    )}
+
                     {session.status === 'Pending' && (
                       <PillButton
                         variant="secondary"
                         size="sm"
-                        onClick={() => handleWithdrawPending(session.id)}
+                        onClick={() => handleWithdrawPending(session)}
                       >
                         Withdraw Request
                       </PillButton>
@@ -156,7 +232,7 @@ export function StudentSessionsPage() {
                         variant="ghost"
                         size="sm"
                         className="text-rose-500 hover:bg-rose-500/10"
-                        onClick={() => handleCancelSession(session.id)}
+                        onClick={() => handleCancelSession(session)}
                       >
                         Cancel
                       </PillButton>
@@ -177,8 +253,8 @@ export function StudentSessionsPage() {
                   </div>
                 </div>
 
-                {/* Pending Slot hint */}
-                {session.status === 'Pending' && session.pendingHint && (
+                {/* Pending / Rejected Slot hint */}
+                {(session.status === 'Pending' || session.status === 'Rejected') && session.pendingHint && (
                   <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-300 flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 shrink-0" />
                     <span>{session.pendingHint}</span>
@@ -226,29 +302,58 @@ export function StudentSessionsPage() {
 
                       {/* Completed Session Rating */}
                       {session.status === 'Completed' && (
-                        <div className="mt-4 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">
-                          <h5 className="text-xs font-bold text-emerald-800 dark:text-emerald-300 mb-2">
-                            Rate your session with {session.tutorName}
-                          </h5>
-                          <div className="flex items-center gap-1.5">
-                            {[1, 2, 3, 4, 5].map((star) => (
-                              <button
-                                key={star}
-                                onClick={() => handleRate(session.id, star)}
-                                className="p-1 hover:scale-110 transition-transform"
-                              >
-                                <Star
-                                  className={`w-5 h-5 ${
-                                    (ratedSessions[session.id] || session.rating) >= star
-                                      ? 'fill-amber-400 text-amber-400'
-                                      : 'text-text-muted'
-                                  }`}
-                                />
-                              </button>
-                            ))}
-                            <span className="text-xs text-text-muted ml-2">
-                              {(ratedSessions[session.id] || session.rating) ? 'Rating recorded' : 'Tap to rate'}
-                            </span>
+                        <div className="space-y-3 mt-4">
+                          <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">
+                            <h5 className="text-xs font-bold text-emerald-800 dark:text-emerald-300 mb-2">
+                              Rate your session with {session.tutorName}
+                            </h5>
+                            <div className="flex items-center gap-1.5">
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <button
+                                  key={star}
+                                  onClick={() => handleRate(session, star)}
+                                  className="p-1 hover:scale-110 transition-transform"
+                                >
+                                  <Star
+                                    className={`w-5 h-5 ${
+                                      (ratedSessions[session.id] || session.rating) >= star
+                                        ? 'fill-amber-400 text-amber-400'
+                                        : 'text-text-muted'
+                                    }`}
+                                  />
+                                </button>
+                              ))}
+                              <span className="text-xs text-text-muted ml-2">
+                                {(ratedSessions[session.id] || session.rating) ? 'Rating recorded' : 'Tap to rate'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Post-Class Topic Quiz Card */}
+                          <div className="p-4 rounded-2xl bg-accent-muted/45 border border-accent/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="space-y-1">
+                              <h5 className="text-xs font-bold text-text-main flex items-center gap-1.5">
+                                <HelpCircle className="w-3.5 h-3.5 text-accent" />
+                                Post-Class Topic Quiz
+                              </h5>
+                              {session.postClassQuizAttempt ? (
+                                <p className="text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold flex items-center gap-1">
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  Last Score: {session.postClassQuizAttempt.score}/{session.postClassQuizAttempt.totalQuestions} ({session.postClassQuizAttempt.percentage}%)
+                                </p>
+                              ) : (
+                                <p className="text-[11px] text-text-secondary">
+                                  Test yourself on the topics covered in this class.
+                                </p>
+                              )}
+                            </div>
+                            <PillButton
+                              variant={session.postClassQuizAttempt ? 'secondary' : 'primary'}
+                              size="sm"
+                              onClick={() => setQuizSession(session)}
+                            >
+                              {session.postClassQuizAttempt ? 'Retake Quiz' : 'Take Topic Quiz →'}
+                            </PillButton>
                           </div>
                         </div>
                       )}
@@ -293,18 +398,18 @@ export function StudentSessionsPage() {
                         )}
                       </div>
 
-                      {session.status !== 'Pending' && (
+                      {session.status !== 'Pending' && session.status !== 'Rejected' && (
                         <div className="p-2 border-t border-border-subtle bg-card flex gap-1.5">
                           <input
                             type="text"
                             placeholder="Type a message..."
                             value={newMessage}
                             onChange={(e) => setNewMessage(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && handleSendMessage(session.id)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleSendMessage(session)}
                             className="flex-1 px-3 py-1.5 rounded-xl bg-card-muted border border-border-subtle text-xs focus:outline-none focus:ring-1 focus:ring-accent"
                           />
                           <button
-                            onClick={() => handleSendMessage(session.id)}
+                            onClick={() => handleSendMessage(session)}
                             className="p-2 rounded-xl bg-accent text-white hover:opacity-90 transition-opacity"
                           >
                             <Send className="w-3.5 h-3.5" />
@@ -319,6 +424,13 @@ export function StudentSessionsPage() {
           })
         )}
       </div>
+
+      <PostClassQuizModal
+        session={quizSession}
+        isOpen={!!quizSession}
+        onClose={() => setQuizSession(null)}
+        onCompleted={() => fetchSessions(true)}
+      />
     </div>
   );
 }
