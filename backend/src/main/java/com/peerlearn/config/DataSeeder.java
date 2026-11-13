@@ -16,66 +16,48 @@ public class DataSeeder implements CommandLineRunner {
     private final UserRepository userRepo;
     private final CategoryRepository categoryRepo;
     private final SkillRepository skillRepo;
-    private final SkillCurriculumTopicRepository curriculumRepo;
     private final TutorSkillRepository tutorSkillRepo;
     private final AvailabilitySlotRepository slotRepo;
     private final SessionRequestRepository requestRepo;
-    private final SessionRequestTopicRepository requestTopicRepo;
     private final LearningSessionRepository sessionRepo;
     private final SessionTopicRepository sessionTopicRepo;
     private final SessionMessageRepository messageRepo;
     private final ReviewRepository reviewRepo;
-    private final LearningMaterialRepository materialRepo;
-    private final MaterialBookmarkRepository bookmarkRepo;
-    private final QuizRepository quizRepo;
-    private final QuizQuestionRepository questionRepo;
-    private final QuizAttemptRepository attemptRepo;
+    private final StudyMaterialRepository studyMaterialRepo;
     private final PasswordEncoder passwordEncoder;
 
     public DataSeeder(
         UserRepository userRepo,
         CategoryRepository categoryRepo,
         SkillRepository skillRepo,
-        SkillCurriculumTopicRepository curriculumRepo,
         TutorSkillRepository tutorSkillRepo,
         AvailabilitySlotRepository slotRepo,
         SessionRequestRepository requestRepo,
-        SessionRequestTopicRepository requestTopicRepo,
         LearningSessionRepository sessionRepo,
         SessionTopicRepository sessionTopicRepo,
         SessionMessageRepository messageRepo,
         ReviewRepository reviewRepo,
-        LearningMaterialRepository materialRepo,
-        MaterialBookmarkRepository bookmarkRepo,
-        QuizRepository quizRepo,
-        QuizQuestionRepository questionRepo,
-        QuizAttemptRepository attemptRepo,
+        StudyMaterialRepository studyMaterialRepo,
         PasswordEncoder passwordEncoder
     ) {
         this.userRepo = userRepo;
         this.categoryRepo = categoryRepo;
         this.skillRepo = skillRepo;
-        this.curriculumRepo = curriculumRepo;
         this.tutorSkillRepo = tutorSkillRepo;
         this.slotRepo = slotRepo;
         this.requestRepo = requestRepo;
-        this.requestTopicRepo = requestTopicRepo;
         this.sessionRepo = sessionRepo;
         this.sessionTopicRepo = sessionTopicRepo;
         this.messageRepo = messageRepo;
         this.reviewRepo = reviewRepo;
-        this.materialRepo = materialRepo;
-        this.bookmarkRepo = bookmarkRepo;
-        this.quizRepo = quizRepo;
-        this.questionRepo = questionRepo;
-        this.attemptRepo = attemptRepo;
+        this.studyMaterialRepo = studyMaterialRepo;
         this.passwordEncoder = passwordEncoder;
     }
 
     @Override
     @Transactional
     public void run(String... args) {
-        // 0. Backfill auth_provider for any pre-existing rows created before OAuth support
+        // 0. Backfill auth_provider for any pre-existing rows
         List<User> existingUsers = userRepo.findAll();
         boolean backfilled = false;
         for (User u : existingUsers) {
@@ -88,7 +70,7 @@ public class DataSeeder implements CommandLineRunner {
             userRepo.saveAll(existingUsers);
         }
 
-        // 1. Seed Categories, Skills & Curriculum Topics if catalog is empty
+        // 1. Seed Categories & Skills if catalog is empty
         if (categoryRepo.count() == 0) {
             seedCatalog();
         }
@@ -105,77 +87,22 @@ public class DataSeeder implements CommandLineRunner {
         Category langCat = categoryRepo.save(new Category("Languages", "Globe", "green"));
         Category musicCat = categoryRepo.save(new Category("Music & Arts", "Music", "peach"));
 
-        Skill python = skillRepo.save(new Skill(progCat, "Python Programming", "Basics,OOP,Data", 79));
-        Skill react = skillRepo.save(new Skill(progCat, "React & Frontend", "Hooks,Vite,Tailwind", 99));
-        Skill algo = skillRepo.save(new Skill(progCat, "Data Structures & Algorithms", "Trees,Graphs,Big-O", 129));
-        Skill sql = skillRepo.save(new Skill(progCat, "SQL & Database Design", "PostgreSQL,Schema,Indexing", 89));
+        skillRepo.save(new Skill(progCat, "Python Programming", "Functions & Scope, OOP, Recursion, List Comprehensions", 79));
+        skillRepo.save(new Skill(progCat, "React & Frontend", "JSX, Props vs State, useEffect, Hooks", 99));
+        skillRepo.save(new Skill(progCat, "Data Structures & Algorithms", "Time Complexity, Trees, Graphs, Sorting", 129));
+        skillRepo.save(new Skill(progCat, "SQL & Database Design", "3NF Normalization, JOINs, Triggers, Indexing", 89));
 
-        Skill figma = skillRepo.save(new Skill(designCat, "Figma UI/UX Design", "Auto-layout,Wireframes,Systems", 89));
-        skillRepo.save(new Skill(designCat, "Visual Branding & Typography", "Posters,Brand Kits", 79));
-        skillRepo.save(new Skill(designCat, "Motion Design Basics", "After Effects,Lottie", 119));
+        skillRepo.save(new Skill(designCat, "Figma UI/UX Design", "Auto-layout, Wireframes, Design Systems", 89));
+        skillRepo.save(new Skill(designCat, "Visual Branding & Typography", "Posters, Brand Kits, Hierarchy", 79));
+        skillRepo.save(new Skill(designCat, "Motion Design Basics", "After Effects, Transitions, Keyframes", 119));
 
-        Skill spanish = skillRepo.save(new Skill(langCat, "Conversational Spanish", "A1-B2,Grammar,Speaking", 69));
-        skillRepo.save(new Skill(langCat, "Japanese (Hiragana & Kanji)", "JLPT N5,Kanji", 99));
-        skillRepo.save(new Skill(langCat, "French Conversation", "Pronunciation,Culture", 69));
+        skillRepo.save(new Skill(langCat, "Conversational Spanish", "Greetings, Present Tense, Ser vs Estar", 69));
+        skillRepo.save(new Skill(langCat, "Japanese (Hiragana & Kanji)", "Hiragana, Katakana, JLPT N5", 99));
+        skillRepo.save(new Skill(langCat, "French Conversation", "Pronunciation, Basic Phrases, Culture", 69));
 
-        Skill guitar = skillRepo.save(new Skill(musicCat, "Acoustic & Electric Guitar", "Chords,Fingerstyle", 79));
-        skillRepo.save(new Skill(musicCat, "Piano & Keyboard Basics", "Sheet Music,Scales", 89));
-        skillRepo.save(new Skill(musicCat, "Music Production (Ableton)", "Beats,Mixing", 119));
-
-        seedTopics(python, List.of(
-            "Variables, Data Types & Operators",
-            "Conditionals & Logic Loops",
-            "Functions & Scope",
-            "Lists, Dictionaries & Tuples",
-            "Object-Oriented Programming (Classes)",
-            "File I/O & Exception Handling",
-            "Libraries (NumPy & Pandas overview)"
-        ));
-        seedTopics(react, List.of(
-            "JSX Syntax & Rules",
-            "Props vs State",
-            "useEffect & Lifecycle Syncing",
-            "Component Composition",
-            "Custom Hooks & Context API",
-            "Performance & Memoization"
-        ));
-        seedTopics(sql, List.of(
-            "Relational Model & Keys (PK/FK)",
-            "Normalization (1NF, 2NF, 3NF)",
-            "JOINs & Subqueries",
-            "Aggregations & GROUP BY",
-            "Indexing & Query Optimization",
-            "Transactions & Triggers"
-        ));
-        seedTopics(algo, List.of(
-            "Time & Space Complexity (Big-O)",
-            "Recursion & Backtracking",
-            "Stacks, Queues & Linked Lists",
-            "Binary Trees & BSTs",
-            "Graph Traversal (BFS & DFS)"
-        ));
-        seedTopics(figma, List.of(
-            "Figma Interface & Frames",
-            "Auto-layout mastery",
-            "Typography & Color Scales",
-            "Component Properties & Variants",
-            "Interactive Prototyping"
-        ));
-        seedTopics(guitar, List.of(
-            "Tuning & Holding the Guitar",
-            "Open Chords (E, A, D, G, C)",
-            "Basic Strumming & Timing",
-            "Barre Chords (F & B minor)",
-            "Fingerpicking Basics",
-            "Pentatonic Scale & Minor Blues"
-        ));
-        seedTopics(spanish, List.of(
-            "Greetings & Everyday Expressions",
-            "Present Tense Conjugations",
-            "Ser vs Estar",
-            "Past Tenses (Pretérito vs Imperfecto)",
-            "Conversational Roleplay"
-        ));
+        skillRepo.save(new Skill(musicCat, "Acoustic & Electric Guitar", "Open Chords, Strumming, Barre Chords, Fingerstyle", 79));
+        skillRepo.save(new Skill(musicCat, "Piano & Keyboard Basics", "Sheet Music, Major Scales, Arpeggios", 89));
+        skillRepo.save(new Skill(musicCat, "Music Production (Ableton)", "Beats, MIDI, Equalization, Mixing", 119));
     }
 
     private void seedDemoUsersAndActivity() {
@@ -185,7 +112,6 @@ public class DataSeeder implements CommandLineRunner {
         Skill sql = skillRepo.findByNameIgnoreCase("SQL & Database Design").orElseThrow();
         Skill figma = skillRepo.findByNameIgnoreCase("Figma UI/UX Design").orElseThrow();
         Skill branding = skillRepo.findByNameIgnoreCase("Visual Branding & Typography").orElseThrow();
-        Skill spanish = skillRepo.findByNameIgnoreCase("Conversational Spanish").orElseThrow();
         Skill guitar = skillRepo.findByNameIgnoreCase("Acoustic & Electric Guitar").orElseThrow();
 
         String defaultHash = passwordEncoder.encode("password123");
@@ -310,21 +236,16 @@ public class DataSeeder implements CommandLineRunner {
 
         // Pending Session Requests
         createRequest(marcus, hannah, python, hannahTue4, "PENDING",
-            "Hey Hannah! I'm preparing for my midterm quiz and would love to review scope and recursion.",
-            List.of("Functions & Scope", "Conditionals & Logic Loops"));
+            "[Functions & Scope, Conditionals & Logic Loops] Hey Hannah! I'm preparing for my midterm quiz and would love to review scope and recursion.");
         createRequest(maya, hannah, python, hannahTue4, "PENDING",
-            "Need help formatting nested dictionaries for a lab assignment.",
-            List.of("Lists, Dictionaries & Tuples"));
+            "[Lists, Dictionaries & Tuples] Need help formatting nested dictionaries for a lab assignment.");
         createRequest(julian, hannah, python, hannahTue4, "PENDING",
-            "Starting Python from scratch and want to make sure my environment setup is solid.",
-            List.of("Variables, Data Types & Operators"));
+            "[Variables, Data Types & Operators] Starting Python from scratch and want to make sure my environment setup is solid.");
         createRequest(jordan, hannah, guitar, hannahThu530, "PENDING",
-            "My F chord still buzzes when I switch quickly from C. Looking for finger placement tips!",
-            List.of("Barre Chords (F & B minor)", "Basic Strumming & Timing"));
+            "[Barre Chords, Basic Strumming] My F chord still buzzes when I switch quickly from C. Looking for finger placement tips!");
 
         createRequest(hannah, elena, guitar, elenaFri6, "PENDING",
-            "Would love to practice fingerstyle and alternating thumb patterns.",
-            List.of("Fingerpicking Basics"));
+            "[Fingerpicking Basics] Would love to practice fingerstyle and alternating thumb patterns.");
 
         // Learning Sessions (Upcoming & Completed)
         LocalDate today = LocalDate.now();
@@ -381,167 +302,13 @@ public class DataSeeder implements CommandLineRunner {
             "SQL Joins & Normalization", "COMPLETED", "14 days ago", today.minusDays(14), 1.5);
         createReview(s8, julian, sarah, sql, 5, "Great structure, clear examples, very friendly!");
 
-        // Learning Materials & Bookmarks
-        if (materialRepo.count() == 0) {
-            LearningMaterial m1 = createMaterial(python, sarah, "Python Essential Syntax & Data Types", "Cheatsheet", "violet",
-                "4 min read", "Quick reference for lists, tuples, dictionaries, slicing tricks, and common string formatting methods.", false, 12);
-            createMaterial(python, priya, "List Comprehensions & Generator Expressions", "Notes", "blue",
-                "6 min read", "Visual guide to transforming [x**2 for x in nums if x > 0] and nested loops without boilerplate.", false, 9);
-            LearningMaterial m3 = createMaterial(python, sarah, "Official Python Visual Debugger Guide", "Link", "green",
-                "External", "Interactive stepping through call stacks and variable memory states.", false, 15);
-            createMaterial(python, null, "Python Programming: Variable Unpacking & Extended Slicing", "Cheatsheet", "violet",
-                "5 min read", "Step-by-step memory model showing how list pointers and slice views work in Python 3.", true, 14);
-            createMaterial(python, hannah, "Python Memory Management & Garbage Collection", "Notes", "blue",
-                "5 min read", "Reference counting, cyclic garbage collector, and object mutability pitfalls.", false, 18);
-            createMaterial(python, hannah, "Common Beginner Pitfalls with Mutable Default Args", "Cheatsheet", "violet",
-                "3 min read", "Why def add(x, box=[]) shares state across calls and how to use None safely.", false, 32);
-
-            createMaterial(figma, alex, "Figma Auto-Layout Spacing & Resizing Guide", "Cheatsheet", "yellow",
-                "4 min read", "Complete cheat sheet for Hug Contents, Fill Container, Fixed Width, and absolute positioning.", false, 11);
-            createMaterial(spanish, null, "Pretérito vs Imperfecto Decision Tree", "Notes", "green",
-                "5 min read", "When to use completed past actions vs ongoing/habitual past descriptions in Spanish.", true, 7);
-
-            bookmarkRepo.save(new MaterialBookmark(hannah, m1));
-            bookmarkRepo.save(new MaterialBookmark(hannah, m3));
-        }
-
-        // Quizzes & Questions
-        if (quizRepo.count() == 0) {
-            Quiz pyQuiz = quizRepo.save(new Quiz(python, "Python Mastery Check: Functions & Scope"));
-            createQuestion(pyQuiz,
-                "What is the output of modifying a default mutable argument like `def add_item(item, box=[])` across multiple calls?",
-                "A new empty list is created on each call",
-                "The same list persists and accumulates items across calls",
-                "A TypeError is raised at runtime",
-                "The box parameter resets to None",
-                1,
-                "In Python, default arguments are evaluated once when the function is defined, so a mutable default like `box=[]` is shared across all function calls.",
-                "Mutable Default Arguments"
-            );
-            createQuestion(pyQuiz,
-                "Which keyword allows modifying a variable bound in an outer (enclosing) function scope in Python?",
-                "global", "nonlocal", "outer", "super",
-                1,
-                "`nonlocal` binds to a variable in the nearest enclosing non-global scope, whereas `global` binds to module-level scope.",
-                "Scope & LEGB Rule"
-            );
-            createQuestion(pyQuiz,
-                "What does `*args` and `**kwargs` represent in a function signature?",
-                "Pointer references and memory addresses",
-                "Tuple of positional arguments and dictionary of keyword arguments",
-                "Required arguments and optional arguments",
-                "List of return values",
-                1,
-                "`*args` collects arbitrary positional arguments into a tuple, while `**kwargs` collects arbitrary keyword arguments into a dictionary.",
-                "Function Parameters"
-            );
-            createQuestion(pyQuiz,
-                "Which Python data structure preserves insertion order and stores key-value pairs with O(1) average lookup?",
-                "tuple", "dict", "set", "frozenset",
-                1,
-                "Dictionaries (dict) map unique keys to values with average O(1) hash-table lookup and preserve insertion order in Python 3.7+.",
-                "Variables, Data Types & Operators"
-            );
-            createQuestion(pyQuiz,
-                "Which statement immediately skips the rest of the current loop iteration and moves to the next item?",
-                "break", "pass", "continue", "return",
-                2,
-                "`continue` jumps to the next iteration of a loop, whereas `break` exits the loop completely.",
-                "Conditionals & Logic Loops"
-            );
-            createQuestion(pyQuiz,
-                "What does `[x * 2 for x in range(4) if x % 2 == 0]` evaluate to in Python?",
-                "[0, 2, 4, 6]", "[0, 4]", "[2, 6]", "[0, 2, 4]",
-                1,
-                "Only `0` and `2` satisfy `x % 2 == 0`, producing `[0, 4]`.",
-                "List Comprehensions"
-            );
-
-            Quiz sqlQuiz = quizRepo.save(new Quiz(sql, "SQL & Normalization Check"));
-            createQuestion(sqlQuiz,
-                "Which normal form eliminates transitive dependencies of non-key attributes on the primary key?",
-                "1NF", "2NF", "3NF", "UNF",
-                2,
-                "Third Normal Form (3NF) requires the table to be in 2NF and have no transitive dependencies between non-prime attributes.",
-                "Normalization (3NF)"
-            );
-            createQuestion(sqlQuiz,
-                "Which SQL clause is used to filter aggregated groups after GROUP BY?",
-                "WHERE", "HAVING", "ORDER BY", "DISTINCT",
-                1,
-                "WHERE filters rows before grouping, whereas HAVING filters groups created by GROUP BY.",
-                "Aggregations & HAVING"
-            );
-            createQuestion(sqlQuiz,
-                "Which SQL JOIN returns all rows from the left table and matched rows from the right table (or NULL if no match)?",
-                "INNER JOIN", "CROSS JOIN", "LEFT JOIN", "SELF JOIN",
-                2,
-                "LEFT JOIN preserves all left-table rows and puts NULL where no matching right row exists.",
-                "JOINs & Subqueries"
-            );
-
-            Quiz figmaQuiz = quizRepo.save(new Quiz(figma, "Figma Auto-Layout Essentials"));
-            createQuestion(figmaQuiz,
-                "Which resizing option makes a child layer expand to occupy all available space inside an Auto-Layout frame?",
-                "Hug contents", "Fill container", "Fixed size", "Scale",
-                1,
-                "Fill container stretches the child to match the remaining width or height of its parent Auto-Layout frame.",
-                "Hug, Fill, Fixed resizing"
-            );
-            createQuestion(figmaQuiz,
-                "Why prefer Frames (with Auto-Layout) over regular Groups for responsive UI cards?",
-                "Groups cannot hold text",
-                "Frames support padding, spacing gaps, clipping, and responsive constraints",
-                "Groups export only as SVG",
-                "Frames block nested layers",
-                1,
-                "Frames support Auto-layout gap, padding, and Hug/Fill resizing rules; Groups are simple bounding boxes.",
-                "Auto-layout padding & gap"
-            );
-
-            Quiz reactQuiz = quizRepo.save(new Quiz(react, "React & Frontend Mastery Check"));
-            createQuestion(reactQuiz,
-                "What is the key difference between props and state in React?",
-                "Props are mutable inside children while state is immutable",
-                "Props pass data down from parent while state is managed locally inside a component",
-                "State never triggers re-renders",
-                "Props only work in class components",
-                1,
-                "Props flow top-down and are read-only inside the child, while state holds component-local interactive data.",
-                "Props vs State"
-            );
-            createQuestion(reactQuiz,
-                "When you pass `[]` as the dependency array to `useEffect`, when does it run?",
-                "Every keystroke", "Once after initial mount (plus cleanup on unmount)", "Never", "Before render",
-                1,
-                "An empty dependency array `[]` runs the effect once after initial mount.",
-                "useEffect & Lifecycle Syncing"
-            );
-
-            Quiz guitarQuiz = quizRepo.save(new Quiz(guitar, "Acoustic & Electric Guitar Check"));
-            createQuestion(guitarQuiz,
-                "Which technique presses the index finger flat across all six strings on a fret to move chord shapes up the neck?",
-                "Hammer-on", "Palm muting", "Barre chord", "Harmonic",
-                2,
-                "A barre chord uses your index finger across the strings like a movable capo (e.g., F and Bm).",
-                "Barre Chords (F & B minor)"
-            );
-
-            Quiz algoQuiz = quizRepo.save(new Quiz(algo, "Data Structures & Algorithms Check"));
-            createQuestion(algoQuiz,
-                "What is the worst-case time complexity of Binary Search on a sorted array of N elements?",
-                "O(1)", "O(log N)", "O(N)", "O(N log N)",
-                1,
-                "Binary search halves the remaining search space on every comparison -> O(log N).",
-                "Time & Space Complexity (Big-O)"
-            );
-
-            createAttempt(pyQuiz, hannah, 3, 3, "", "List Slicing,Dictionary Lookups,Boolean Logic");
-            createAttempt(pyQuiz, hannah, 2, 3, "Mutable Default Arguments", "Scope & LEGB Rule,Function Parameters");
-            createAttempt(pyQuiz, marcus, 3, 3, "", "Functions & Scope,Mutable Default Arguments");
-            createAttempt(pyQuiz, maya, 2, 3, "Scope & LEGB Rule", "Function Parameters");
-            createAttempt(pyQuiz, julian, 2, 3, "Mutable Default Arguments", "Function Parameters");
-            createAttempt(sqlQuiz, jordan, 2, 2, "", "Normalization (3NF),Aggregations & HAVING");
+        // Study Materials (Consolidated 11th table)
+        if (studyMaterialRepo.count() == 0) {
+            byte[] samplePdfData = "%PDF-1.4 sample peerlearn study notes".getBytes();
+            createStudyMaterial(python, sarah, "Python Essential Syntax & Data Types", "PDF Notes", "python-syntax-guide.pdf", "application/pdf", samplePdfData, "Quick reference guide for lists, tuples, dictionaries, slicing tricks, and string methods.");
+            createStudyMaterial(python, priya, "List Comprehensions & Generator Expressions", "PDF Notes", "python-comprehensions.pdf", "application/pdf", samplePdfData, "Visual guide to transforming [x**2 for x in nums if x > 0] and nested loops without boilerplate.");
+            createStudyMaterial(sql, sarah, "SQL Relational Model & 3NF Normalization Cheat Sheet", "PDF Notes", "sql-3nf-normalization.pdf", "application/pdf", samplePdfData, "Step-by-step 1NF, 2NF, 3NF normalization rules and sample schemas with foreign key constraints.");
+            createStudyMaterial(figma, alex, "Figma Auto-Layout Spacing & Resizing Guide", "PDF Notes", "figma-autolayout-guide.pdf", "application/pdf", samplePdfData, "Complete cheatsheet for Hug Contents, Fill Container, Fixed Width, and absolute positioning.");
         }
     }
 
@@ -574,13 +341,7 @@ public class DataSeeder implements CommandLineRunner {
             .orElseGet(() -> slotRepo.save(new AvailabilitySlot(tutor, day, time, available)));
     }
 
-    private void seedTopics(Skill skill, List<String> topics) {
-        for (int i = 0; i < topics.size(); i++) {
-            curriculumRepo.save(new SkillCurriculumTopic(skill, topics.get(i), i + 1));
-        }
-    }
-
-    private SessionRequest createRequest(User student, User tutor, Skill skill, AvailabilitySlot slot, String status, String message, List<String> topics) {
+    private SessionRequest createRequest(User student, User tutor, Skill skill, AvailabilitySlot slot, String status, String message) {
         SessionRequest req = new SessionRequest();
         req.setStudent(student);
         req.setTutor(tutor);
@@ -588,11 +349,7 @@ public class DataSeeder implements CommandLineRunner {
         req.setSlot(slot);
         req.setStatus(status);
         req.setMessage(message);
-        SessionRequest saved = requestRepo.save(req);
-        for (String t : topics) {
-            requestTopicRepo.save(new SessionRequestTopic(saved, t));
-        }
-        return saved;
+        return requestRepo.save(req);
     }
 
     private LearningSession createSession(SessionRequest req, User student, User tutor, Skill skill, AvailabilitySlot slot,
@@ -622,44 +379,17 @@ public class DataSeeder implements CommandLineRunner {
         reviewRepo.save(r);
     }
 
-    private LearningMaterial createMaterial(Skill skill, User author, String title, String type, String tint,
-                                            String readTime, String content, boolean aiSeeded, int verifiedCount) {
-        LearningMaterial m = new LearningMaterial();
+    private void createStudyMaterial(Skill skill, User uploader, String title, String type, String fileName, String contentType, byte[] data, String desc) {
+        StudyMaterial m = new StudyMaterial();
         m.setSkill(skill);
-        m.setAuthor(author);
+        m.setUploader(uploader);
         m.setTitle(title);
         m.setMaterialType(type);
-        m.setTint(tint);
-        m.setReadTime(readTime);
-        m.setContent(content);
-        m.setIsAiSeeded(aiSeeded);
-        m.setVerifiedCount(verifiedCount);
-        m.setStatus("Published");
-        return materialRepo.save(m);
-    }
-
-    private void createQuestion(Quiz quiz, String q, String a, String b, String c, String d, int correctIdx, String explanation, String tag) {
-        QuizQuestion qq = new QuizQuestion();
-        qq.setQuiz(quiz);
-        qq.setQuestionText(q);
-        qq.setOptionA(a);
-        qq.setOptionB(b);
-        qq.setOptionC(c);
-        qq.setOptionD(d);
-        qq.setCorrectIndex(correctIdx);
-        qq.setExplanation(explanation);
-        qq.setTopicTag(tag);
-        questionRepo.save(qq);
-    }
-
-    private void createAttempt(Quiz quiz, User user, int score, int total, String missed, String strong) {
-        QuizAttempt a = new QuizAttempt();
-        a.setQuiz(quiz);
-        a.setUser(user);
-        a.setScore(score);
-        a.setTotalQuestions(total);
-        a.setMissedTopics(missed);
-        a.setStrongTopics(strong);
-        attemptRepo.save(a);
+        m.setFileName(fileName);
+        m.setContentType(contentType);
+        m.setFileSize((long) data.length);
+        m.setFileData(data);
+        m.setDescription(desc);
+        studyMaterialRepo.save(m);
     }
 }

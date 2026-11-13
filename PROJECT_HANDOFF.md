@@ -24,7 +24,7 @@ One account acts as both **Student** and **Tutor** (switched via the top bar `Mo
   - Spring Web, Spring Data JPA (Hibernate), Spring Security (`STATELESS` JWT + BCrypt, `jjwt` `0.12.6`), Validation, Spring Mail (`spring-boot-starter-mail`), `@EnableAsync`
   - PostgreSQL JDBC Driver, Flyway (`flyway-core` + `flyway-database-postgresql`)
 - **Database:**
-  - PostgreSQL `14+`, normalized across **22 tables**, versioned via Flyway migrations (`V1`–`V4`) with reference DDL at `backend/database/schema_postgres.sql`.
+  - PostgreSQL `14+`, normalized across **11 tables** (3NF, fulfilling Part B DBMS Mini-Project requirements: $\ge 5$ tables, trigger, stored procedure, view), versioned via Flyway migrations (`V1`–`V5`) with reference DDL at `backend/database/schema_postgres.sql`.
 
 ---
 
@@ -53,13 +53,14 @@ One account acts as both **Student** and **Tutor** (switched via the top bar `Mo
 - `backend/src/main/java/com/peerlearn/config/SecurityConfig.java` — Stateless security filter chain, JWT filter (`JwtAuthFilter`), CORS configuration trimming whitespace and trailing slashes from `app.cors.allowed-origins`.
 - `backend/src/main/java/com/peerlearn/controller/AuthController.java` — `/api/health`, `/api/auth/register`, `/api/auth/login`, `/api/auth/demo`, `/api/auth/forgot-password`, `/api/auth/reset-password`, `/api/auth/logout`, `/api/auth/me`, `/api/auth/sessions`, `/api/profile`.
 - `backend/src/main/java/com/peerlearn/service/AuthService.java` — Registration, BCrypt login, demo account login (`hannah.student@university.edu`), session management (`user_sessions`), password reset tokens (`password_reset_tokens`, 30-min expiry), uses `app.frontend.url` to generate reset links.
-- `backend/src/main/java/com/peerlearn/service/EmailNotificationService.java` — Sends welcome emails (`@Async`) and password-reset emails via `MimeMessageHelper` (`UTF-8`) with `InternetAddress(senderAddress, displayName)` so Gmail displays **`PeerLearn`** (`app.mail.from-name`) as sender name while keeping the authenticated SMTP address. Uses `app.frontend.url` for the `"Open PeerLearn"` link.
+- `backend/src/main/java/com/peerlearn/service/EmailNotificationService.java` — Optional email helper for password-reset emails via `MimeMessageHelper` (`UTF-8`). Registration does not send emails, ensuring zero setup friction.
 
 ### Flyway Migrations (`backend/src/main/resources/db/migration/`)
-1. `V1__initial_schema.sql` — Core 18-table relational schema + seed data.
-2. `V2__dbms_enhancements.sql` — `password_reset_tokens`, `session_audit_logs`, triggers (`trg_mark_slot_booked_on_accept`, `trg_audit_session_changes`), stored function `fn_reject_conflicting_requests`, view `vw_tutor_ratings`, partial & GIN full-text indexes.
-3. `V3__material_attachments.sql` — `material_attachments` (`BYTEA` storage up to 10 MB/file) and `material_verifications` (unique per-tutor approvals).
-4. `V4__pricing_and_session_quizzes.sql` — INR fee columns (`base_price_inr`, `hourly_fee_inr`, `fee_inr`), `quiz_attempts.session_id`, and topic-tagged quiz questions.
+1. `V1__initial_schema.sql` — Core initial schema.
+2. `V2__dbms_enhancements.sql` — Triggers (`trg_mark_slot_booked_on_accept`), stored function `fn_reject_conflicting_requests`, view `vw_tutor_ratings`, partial & GIN full-text indexes.
+3. `V3__material_attachments.sql` — Initial attachment storage.
+4. `V4__pricing_and_session_quizzes.sql` — INR fee columns.
+5. `V5__simplify_to_11_tables.sql` — Streamlines schema down to exactly **11 tables** (`users`, `categories`, `skills`, `tutor_skills`, `availability_slots`, `session_requests`, `learning_sessions`, `session_topics`, `session_messages`, `reviews`, `study_materials`). Quizzes run via zero-DB static question bank in `src/data/quizData.js`.
 
 ---
 

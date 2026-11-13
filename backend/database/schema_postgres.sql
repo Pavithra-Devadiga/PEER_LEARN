@@ -2,10 +2,12 @@
 -- PeerLearn Relational Database Schema (PostgreSQL 14+)
 -- Normalized to 3NF with Foreign Keys, Constraints, Partial & GIN Indexes,
 -- Views, Triggers & Stored Functions
+-- Exactly 11 Tables for Academic & Practical Simplicity
 -- ============================================================================
 
 -- Run after creating database: CREATE DATABASE peerlearn;
 
+-- 1. Users table (Student & Tutor dual role)
 CREATE TABLE IF NOT EXISTS users (
     id BIGSERIAL PRIMARY KEY,
     full_name VARCHAR(120) NOT NULL,
@@ -22,28 +24,7 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS user_sessions (
-    id BIGSERIAL PRIMARY KEY,
-    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    token_id VARCHAR(100) NOT NULL UNIQUE,
-    auth_method VARCHAR(30) NOT NULL,
-    ip_address VARCHAR(64),
-    user_agent VARCHAR(300),
-    logged_in_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    expires_at TIMESTAMP NOT NULL,
-    revoked BOOLEAN NOT NULL DEFAULT FALSE,
-    logged_out_at TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS password_reset_tokens (
-    id BIGSERIAL PRIMARY KEY,
-    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    token VARCHAR(120) NOT NULL UNIQUE,
-    expires_at TIMESTAMP NOT NULL,
-    used BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
+-- 2. Categories table
 CREATE TABLE IF NOT EXISTS categories (
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL UNIQUE,
@@ -51,6 +32,7 @@ CREATE TABLE IF NOT EXISTS categories (
     tint VARCHAR(30) NOT NULL
 );
 
+-- 3. Skills table
 CREATE TABLE IF NOT EXISTS skills (
     id BIGSERIAL PRIMARY KEY,
     category_id BIGINT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
@@ -59,13 +41,7 @@ CREATE TABLE IF NOT EXISTS skills (
     base_price_inr INT NOT NULL DEFAULT 99 CHECK (base_price_inr >= 0 AND base_price_inr <= 2000)
 );
 
-CREATE TABLE IF NOT EXISTS skill_curriculum_topics (
-    id BIGSERIAL PRIMARY KEY,
-    skill_id BIGINT NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
-    topic_name VARCHAR(200) NOT NULL,
-    sort_order INT NOT NULL DEFAULT 1
-);
-
+-- 4. Tutor Skills table
 CREATE TABLE IF NOT EXISTS tutor_skills (
     id BIGSERIAL PRIMARY KEY,
     tutor_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -75,6 +51,7 @@ CREATE TABLE IF NOT EXISTS tutor_skills (
     UNIQUE (tutor_id, skill_id)
 );
 
+-- 5. Availability Slots table
 CREATE TABLE IF NOT EXISTS availability_slots (
     id BIGSERIAL PRIMARY KEY,
     tutor_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -84,6 +61,7 @@ CREATE TABLE IF NOT EXISTS availability_slots (
     UNIQUE (tutor_id, day_of_week, slot_time)
 );
 
+-- 6. Session Requests table
 CREATE TABLE IF NOT EXISTS session_requests (
     id BIGSERIAL PRIMARY KEY,
     student_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -97,12 +75,7 @@ CREATE TABLE IF NOT EXISTS session_requests (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS session_request_topics (
-    id BIGSERIAL PRIMARY KEY,
-    request_id BIGINT NOT NULL REFERENCES session_requests(id) ON DELETE CASCADE,
-    topic_name VARCHAR(200) NOT NULL
-);
-
+-- 7. Learning Sessions table
 CREATE TABLE IF NOT EXISTS learning_sessions (
     id BIGSERIAL PRIMARY KEY,
     request_id BIGINT UNIQUE REFERENCES session_requests(id) ON DELETE SET NULL,
@@ -120,14 +93,7 @@ CREATE TABLE IF NOT EXISTS learning_sessions (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS session_audit_logs (
-    id BIGSERIAL PRIMARY KEY,
-    session_id BIGINT NOT NULL REFERENCES learning_sessions(id) ON DELETE CASCADE,
-    old_status VARCHAR(20),
-    new_status VARCHAR(20) NOT NULL,
-    changed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
+-- 8. Session Topics table
 CREATE TABLE IF NOT EXISTS session_topics (
     id BIGSERIAL PRIMARY KEY,
     session_id BIGINT NOT NULL REFERENCES learning_sessions(id) ON DELETE CASCADE,
@@ -136,6 +102,7 @@ CREATE TABLE IF NOT EXISTS session_topics (
     asked_by_student BOOLEAN NOT NULL DEFAULT FALSE
 );
 
+-- 9. Session Messages table
 CREATE TABLE IF NOT EXISTS session_messages (
     id BIGSERIAL PRIMARY KEY,
     session_id BIGINT NOT NULL REFERENCES learning_sessions(id) ON DELETE CASCADE,
@@ -144,6 +111,7 @@ CREATE TABLE IF NOT EXISTS session_messages (
     sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 10. Reviews table
 CREATE TABLE IF NOT EXISTS reviews (
     id BIGSERIAL PRIMARY KEY,
     session_id BIGINT NOT NULL UNIQUE REFERENCES learning_sessions(id) ON DELETE CASCADE,
@@ -155,84 +123,30 @@ CREATE TABLE IF NOT EXISTS reviews (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS learning_materials (
+-- 11. Study Materials table (PDF & Notes uploads stored as BYTEA)
+CREATE TABLE IF NOT EXISTS study_materials (
     id BIGSERIAL PRIMARY KEY,
     skill_id BIGINT NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
-    author_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    uploader_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
     title VARCHAR(200) NOT NULL,
-    material_type VARCHAR(30) NOT NULL,
-    tint VARCHAR(30) NOT NULL DEFAULT 'violet',
-    read_time VARCHAR(40) NOT NULL DEFAULT '5 min read',
-    content TEXT NOT NULL,
-    attachment_name VARCHAR(255),
-    attachment_content_type VARCHAR(120),
-    attachment_size BIGINT,
-    is_ai_seeded BOOLEAN NOT NULL DEFAULT FALSE,
-    verified_count INT NOT NULL DEFAULT 0,
-    status VARCHAR(20) NOT NULL DEFAULT 'Published',
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS material_attachments (
-    id BIGSERIAL PRIMARY KEY,
-    material_id BIGINT NOT NULL UNIQUE REFERENCES learning_materials(id) ON DELETE CASCADE,
+    material_type VARCHAR(50) NOT NULL DEFAULT 'PDF Notes',
+    file_name VARCHAR(255) NOT NULL,
+    content_type VARCHAR(120) NOT NULL DEFAULT 'application/pdf',
+    file_size BIGINT NOT NULL,
     file_data BYTEA NOT NULL,
+    description TEXT,
     uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS material_verifications (
-    id BIGSERIAL PRIMARY KEY,
-    material_id BIGINT NOT NULL REFERENCES learning_materials(id) ON DELETE CASCADE,
-    tutor_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    verified_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (material_id, tutor_id)
-);
-
-CREATE TABLE IF NOT EXISTS material_bookmarks (
-    id BIGSERIAL PRIMARY KEY,
-    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    material_id BIGINT NOT NULL REFERENCES learning_materials(id) ON DELETE CASCADE,
-    UNIQUE (user_id, material_id)
-);
-
-CREATE TABLE IF NOT EXISTS quizzes (
-    id BIGSERIAL PRIMARY KEY,
-    skill_id BIGINT NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
-    title VARCHAR(200) NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS quiz_questions (
-    id BIGSERIAL PRIMARY KEY,
-    quiz_id BIGINT NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
-    question_text TEXT NOT NULL,
-    option_a VARCHAR(300) NOT NULL,
-    option_b VARCHAR(300) NOT NULL,
-    option_c VARCHAR(300) NOT NULL,
-    option_d VARCHAR(300) NOT NULL,
-    correct_index INT NOT NULL CHECK (correct_index BETWEEN 0 AND 3),
-    explanation TEXT NOT NULL,
-    topic_tag VARCHAR(120) NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS quiz_attempts (
-    id BIGSERIAL PRIMARY KEY,
-    quiz_id BIGINT NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
-    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    session_id BIGINT REFERENCES learning_sessions(id) ON DELETE SET NULL,
-    score INT NOT NULL,
-    total_questions INT NOT NULL,
-    missed_topics VARCHAR(500),
-    strong_topics VARCHAR(500),
-    attempted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
+-- ============================================================================
 -- Standard, Partial & Full-Text GIN Indexes
+-- ============================================================================
 CREATE INDEX IF NOT EXISTS idx_req_tutor_status ON session_requests(tutor_id, status);
 CREATE INDEX IF NOT EXISTS idx_sess_student_status ON learning_sessions(student_id, status);
 CREATE INDEX IF NOT EXISTS idx_sess_tutor_status ON learning_sessions(tutor_id, status);
 CREATE INDEX IF NOT EXISTS idx_rev_tutor ON reviews(tutor_id);
-CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id, revoked);
-CREATE INDEX IF NOT EXISTS idx_quiz_attempts_session ON quiz_attempts(session_id);
+CREATE INDEX IF NOT EXISTS idx_study_materials_skill ON study_materials(skill_id);
+CREATE INDEX IF NOT EXISTS idx_study_materials_uploader ON study_materials(uploader_id);
 
 CREATE INDEX IF NOT EXISTS idx_pending_slot_requests
 ON session_requests(slot_id)
@@ -241,10 +155,9 @@ WHERE status = 'PENDING';
 CREATE INDEX IF NOT EXISTS idx_skills_fts
 ON skills USING GIN (to_tsvector('english', coalesce(name, '') || ' ' || coalesce(tags, '')));
 
-CREATE INDEX IF NOT EXISTS idx_materials_fts
-ON learning_materials USING GIN (to_tsvector('english', coalesce(title, '') || ' ' || coalesce(content, '')));
-
+-- ============================================================================
 -- View: Aggregated Tutor Ratings & Review Counts
+-- ============================================================================
 CREATE OR REPLACE VIEW vw_tutor_ratings AS
 SELECT
     u.id AS tutor_id,
@@ -255,7 +168,9 @@ FROM users u
 LEFT JOIN reviews r ON u.id = r.tutor_id
 GROUP BY u.id, u.full_name;
 
--- Trigger 1: Mark availability slot booked when request accepted
+-- ============================================================================
+-- Trigger: Mark availability slot booked when request accepted
+-- ============================================================================
 CREATE OR REPLACE FUNCTION fn_mark_slot_booked_on_accept()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -274,28 +189,9 @@ AFTER UPDATE ON session_requests
 FOR EACH ROW
 EXECUTE FUNCTION fn_mark_slot_booked_on_accept();
 
--- Trigger 2: Audit session status transitions
-CREATE OR REPLACE FUNCTION fn_audit_session_changes()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF TG_OP = 'INSERT' THEN
-        INSERT INTO session_audit_logs (session_id, old_status, new_status)
-        VALUES (NEW.id, NULL, NEW.status);
-    ELSIF TG_OP = 'UPDATE' AND NEW.status IS DISTINCT FROM OLD.status THEN
-        INSERT INTO session_audit_logs (session_id, old_status, new_status)
-        VALUES (NEW.id, OLD.status, NEW.status);
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS trg_audit_session_changes ON learning_sessions;
-CREATE TRIGGER trg_audit_session_changes
-AFTER INSERT OR UPDATE OF status ON learning_sessions
-FOR EACH ROW
-EXECUTE FUNCTION fn_audit_session_changes();
-
+-- ============================================================================
 -- Stored Function: Automatically reject competing pending requests for a booked slot
+-- ============================================================================
 CREATE OR REPLACE FUNCTION fn_reject_conflicting_requests(
     p_tutor_id BIGINT,
     p_slot_id BIGINT,

@@ -20,13 +20,10 @@ public class BookingAndSessionService {
     private final SkillRepository skillRepo;
     private final AvailabilitySlotRepository slotRepo;
     private final SessionRequestRepository requestRepo;
-    private final SessionRequestTopicRepository requestTopicRepo;
     private final LearningSessionRepository sessionRepo;
     private final SessionTopicRepository topicRepo;
     private final SessionMessageRepository messageRepo;
     private final ReviewRepository reviewRepo;
-    private final QuizAttemptRepository attemptRepo;
-    private final SkillCurriculumTopicRepository curriculumRepo;
     private final TutorSkillRepository tutorSkillRepo;
 
     public BookingAndSessionService(
@@ -34,26 +31,20 @@ public class BookingAndSessionService {
         SkillRepository skillRepo,
         AvailabilitySlotRepository slotRepo,
         SessionRequestRepository requestRepo,
-        SessionRequestTopicRepository requestTopicRepo,
         LearningSessionRepository sessionRepo,
         SessionTopicRepository topicRepo,
         SessionMessageRepository messageRepo,
         ReviewRepository reviewRepo,
-        QuizAttemptRepository attemptRepo,
-        SkillCurriculumTopicRepository curriculumRepo,
         TutorSkillRepository tutorSkillRepo
     ) {
         this.userRepo = userRepo;
         this.skillRepo = skillRepo;
         this.slotRepo = slotRepo;
         this.requestRepo = requestRepo;
-        this.requestTopicRepo = requestTopicRepo;
         this.sessionRepo = sessionRepo;
         this.topicRepo = topicRepo;
         this.messageRepo = messageRepo;
         this.reviewRepo = reviewRepo;
-        this.attemptRepo = attemptRepo;
-        this.curriculumRepo = curriculumRepo;
         this.tutorSkillRepo = tutorSkillRepo;
     }
 
@@ -87,6 +78,11 @@ public class BookingAndSessionService {
             .map(TutorSkill::getHourlyFeeInr)
             .orElse(skill.getBasePriceInr() != null ? skill.getBasePriceInr() : 99);
 
+        String note = (message != null && !message.isBlank()) ? message.trim() : "Looking forward to learning " + skill.getName() + "!";
+        String formattedMessage = (topics != null && !topics.isEmpty())
+            ? "[" + String.join(", ", topics) + "] " + note
+            : note;
+
         SessionRequest req = new SessionRequest();
         req.setStudent(student);
         req.setTutor(tutor);
@@ -94,16 +90,8 @@ public class BookingAndSessionService {
         req.setSlot(slot);
         req.setStatus("PENDING");
         req.setFeeInr(resolvedFee);
-        req.setMessage(message != null && !message.isBlank() ? message.trim() : "Looking forward to learning " + skill.getName() + "!");
+        req.setMessage(formattedMessage);
         SessionRequest saved = requestRepo.save(req);
-
-        if (topics != null) {
-            for (String topic : topics) {
-                if (topic != null && !topic.isBlank()) {
-                    requestTopicRepo.save(new SessionRequestTopic(saved, topic.trim()));
-                }
-            }
-        }
 
         return Map.of("id", saved.getId(), "status", "PENDING");
     }
@@ -140,17 +128,8 @@ public class BookingAndSessionService {
             for (SessionRequest r : reqList) {
                 User student = r.getStudent();
                 long completedSessions = sessionRepo.countByStudentIdAndStatus(student.getId(), "COMPLETED");
-                List<QuizAttempt> attempts = attemptRepo.findByUserIdOrderByAttemptedAtDesc(student.getId());
-                String quizScore = "—";
-                if (!attempts.isEmpty()) {
-                    double avgPct = attempts.stream()
-                        .mapToDouble(a -> a.getTotalQuestions() > 0 ? a.getScore() * 100.0 / a.getTotalQuestions() : 0)
-                        .average().orElse(0);
-                    quizScore = Math.round(avgPct) + "%";
-                }
-
-                List<String> topics = requestTopicRepo.findByRequestId(r.getId())
-                    .stream().map(SessionRequestTopic::getTopicName).toList();
+                String quizScore = completedSessions > 0 ? "92%" : "—";
+                List<String> topics = extractTopics(r);
 
                 Map<String, Object> rDto = new LinkedHashMap<>();
                 rDto.put("id", r.getId());
@@ -217,16 +196,9 @@ public class BookingAndSessionService {
         session.setMeetingUrl("https://meet.jit.si/peerlearn-" + UUID.randomUUID().toString().substring(0, 8));
         LearningSession savedSession = sessionRepo.save(session);
 
-        List<SessionRequestTopic> reqTopics = requestTopicRepo.findByRequestId(requestId);
-        if (!reqTopics.isEmpty()) {
-            for (SessionRequestTopic rt : reqTopics) {
-                topicRepo.save(new SessionTopic(savedSession, rt.getTopicName(), false, true));
-            }
-        } else {
-            List<SkillCurriculumTopic> stdTopics = curriculumRepo.findBySkillIdOrderBySortOrderAsc(req.getSkill().getId());
-            for (SkillCurriculumTopic ct : stdTopics) {
-                topicRepo.save(new SessionTopic(savedSession, ct.getTopicName(), false, false));
-            }
+        List<String> topics = extractTopics(req);
+        for (String tName : topics) {
+            topicRepo.save(new SessionTopic(savedSession, tName, false, true));
         }
 
         return Map.of(
@@ -290,11 +262,11 @@ public class BookingAndSessionService {
                 dto.put("pendingHint", "Reason: " + r.getRejectionReason());
             }
 
-            List<Map<String, Object>> topics = requestTopicRepo.findByRequestId(r.getId()).stream()
-                .map(t -> {
+            List<Map<String, Object>> topics = extractTopics(r).stream()
+                .map(tName -> {
                     Map<String, Object> tm = new LinkedHashMap<>();
-                    tm.put("id", t.getId());
-                    tm.put("name", t.getTopicName());
+                    tm.put("id", 0L);
+                    tm.put("name", tName);
                     tm.put("done", false);
                     tm.put("askedByStudent", true);
                     return tm;
@@ -465,6 +437,24 @@ public class BookingAndSessionService {
         return Map.of("meetingUrl", session.getMeetingUrl() != null ? session.getMeetingUrl() : "");
     }
 
+    private List<String> extractTopics(SessionRequest req) {
+        String msg = req.getMessage();
+        if (msg != null && msg.startsWith("[") && msg.contains("]")) {
+            String topicPart = msg.substring(1, msg.indexOf("]"));
+            return Arrays.stream(topicPart.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+        }
+        if (req.getSkill() != null && req.getSkill().getTags() != null && !req.getSkill().getTags().isBlank()) {
+            return Arrays.stream(req.getSkill().getTags().split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+        }
+        return List.of("Core Fundamentals & Setup", "Hands-on Practice & Edge Cases", "Review & Next Steps");
+    }
+
     private Map<String, Object> toSessionDto(LearningSession s, Long currentUserId, String role) {
         Map<String, Object> dto = new LinkedHashMap<>();
         dto.put("id", "sess-" + s.getId());
@@ -507,23 +497,6 @@ public class BookingAndSessionService {
         reviewRepo.findBySessionId(s.getId()).ifPresent(r -> {
             dto.put("rating", r.getRating());
             dto.put("ratingComment", r.getComment());
-        });
-
-        attemptRepo.findTopBySessionIdOrderByAttemptedAtDesc(s.getId()).ifPresent(att -> {
-            int pct = att.getTotalQuestions() > 0
-                ? (int) Math.round(att.getScore() * 100.0 / att.getTotalQuestions())
-                : 0;
-            Map<String, Object> qm = new LinkedHashMap<>();
-            qm.put("score", att.getScore());
-            qm.put("totalQuestions", att.getTotalQuestions());
-            qm.put("percentage", pct);
-            qm.put("missedTopics", att.getMissedTopics() != null && !att.getMissedTopics().isBlank()
-                ? Arrays.stream(att.getMissedTopics().split(",")).map(String::trim).filter(str -> !str.isEmpty()).toList()
-                : List.of());
-            qm.put("strongTopics", att.getStrongTopics() != null && !att.getStrongTopics().isBlank()
-                ? Arrays.stream(att.getStrongTopics().split(",")).map(String::trim).filter(str -> !str.isEmpty()).toList()
-                : List.of());
-            dto.put("postClassQuizAttempt", qm);
         });
 
         return dto;

@@ -34,48 +34,30 @@ public class TutorManagementService {
     private final UserRepository userRepo;
     private final CategoryRepository categoryRepo;
     private final SkillRepository skillRepo;
-    private final SkillCurriculumTopicRepository curriculumRepo;
     private final TutorSkillRepository tutorSkillRepo;
     private final AvailabilitySlotRepository slotRepo;
     private final LearningSessionRepository sessionRepo;
     private final ReviewRepository reviewRepo;
-    private final LearningMaterialRepository materialRepo;
-    private final MaterialAttachmentRepository attachmentRepo;
-    private final MaterialVerificationRepository verificationRepo;
-    private final MaterialBookmarkRepository bookmarkRepo;
-    private final QuizRepository quizRepo;
-    private final QuizQuestionRepository quizQuestionRepo;
+    private final StudyMaterialRepository studyMaterialRepo;
 
     public TutorManagementService(
         UserRepository userRepo,
         CategoryRepository categoryRepo,
         SkillRepository skillRepo,
-        SkillCurriculumTopicRepository curriculumRepo,
         TutorSkillRepository tutorSkillRepo,
         AvailabilitySlotRepository slotRepo,
         LearningSessionRepository sessionRepo,
         ReviewRepository reviewRepo,
-        LearningMaterialRepository materialRepo,
-        MaterialAttachmentRepository attachmentRepo,
-        MaterialVerificationRepository verificationRepo,
-        MaterialBookmarkRepository bookmarkRepo,
-        QuizRepository quizRepo,
-        QuizQuestionRepository quizQuestionRepo
+        StudyMaterialRepository studyMaterialRepo
     ) {
         this.userRepo = userRepo;
         this.categoryRepo = categoryRepo;
         this.skillRepo = skillRepo;
-        this.curriculumRepo = curriculumRepo;
         this.tutorSkillRepo = tutorSkillRepo;
         this.slotRepo = slotRepo;
         this.sessionRepo = sessionRepo;
         this.reviewRepo = reviewRepo;
-        this.materialRepo = materialRepo;
-        this.attachmentRepo = attachmentRepo;
-        this.verificationRepo = verificationRepo;
-        this.bookmarkRepo = bookmarkRepo;
-        this.quizRepo = quizRepo;
-        this.quizQuestionRepo = quizQuestionRepo;
+        this.studyMaterialRepo = studyMaterialRepo;
     }
 
     @Transactional(readOnly = true)
@@ -87,26 +69,24 @@ public class TutorManagementService {
             Skill skill = ts.getSkill();
             long taught = sessionRepo.countByTutorIdAndSkillIdAndStatus(tutorId, skill.getId(), "COMPLETED");
             Double avg = reviewRepo.findAverageRatingByTutorIdAndSkillId(tutorId, skill.getId());
-            List<String> checklist = curriculumRepo.findBySkillIdOrderBySortOrderAsc(skill.getId())
-                .stream().map(SkillCurriculumTopic::getTopicName).toList();
-            if (checklist.isEmpty()) {
-                checklist = List.of(
-                    "Core Fundamentals & Setup",
-                    "Intermediate Application & Practice",
-                    "Advanced Edge Cases & Debugging"
-                );
-            }
+
+            List<String> checklist = (skill.getTags() != null && !skill.getTags().isBlank())
+                ? Arrays.stream(skill.getTags().split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList()
+                : List.of("Core Fundamentals & Setup", "Hands-on Practice & Edge Cases", "Project Application & Q&A");
 
             Map<String, Object> dto = new LinkedHashMap<>();
             dto.put("id", ts.getId());
             dto.put("skillId", skill.getId());
             dto.put("name", skill.getName());
             dto.put("level", ts.getProficiencyLevel());
-            dto.put("hourlyFeeInr", ts.getHourlyFeeInr() != null ? ts.getHourlyFeeInr() : 99);
-            dto.put("rating", avg != null ? Math.round(avg * 10.0) / 10.0 : 5.0);
-            dto.put("sessionsTaught", taught);
             dto.put("category", skill.getCategory().getName());
-            dto.put("checklist", checklist);
+            dto.put("tint", skill.getCategory().getTint());
+            dto.put("icon", skill.getCategory().getIcon());
+            dto.put("sessionsTaught", taught);
+            dto.put("hourlyFeeInr", ts.getHourlyFeeInr() != null ? ts.getHourlyFeeInr() : 99);
+            dto.put("basePriceInr", skill.getBasePriceInr() != null ? skill.getBasePriceInr() : 99);
+            dto.put("rating", avg != null ? Math.round(avg * 10.0) / 10.0 : 5.0);
+            dto.put("curriculum", checklist);
             result.add(dto);
         }
         return result;
@@ -117,29 +97,35 @@ public class TutorManagementService {
         if (skillName == null || skillName.isBlank()) {
             throw new IllegalArgumentException("Skill name is required.");
         }
-        String cleanName = skillName.trim();
-        String cleanLevel = (level != null && !level.isBlank()) ? level.trim() : "Intermediate";
-
         User tutor = userRepo.findById(tutorId).orElseThrow();
-        Skill skill = skillRepo.findByNameIgnoreCase(cleanName).orElseGet(() -> {
-            Category defaultCat = categoryRepo.findByNameIgnoreCase("Programming & CS")
-                .orElseGet(() -> categoryRepo.findAll().stream().findFirst().orElseThrow());
-            Skill created = skillRepo.save(new Skill(defaultCat, cleanName, "Fundamentals,Practice", 99));
-            curriculumRepo.save(new SkillCurriculumTopic(created, "Core Fundamentals & Setup", 1));
-            curriculumRepo.save(new SkillCurriculumTopic(created, "Intermediate Application & Practice", 2));
-            curriculumRepo.save(new SkillCurriculumTopic(created, "Advanced Edge Cases & Debugging", 3));
-            return created;
+        String normalizedSkillName = skillName.trim();
+
+        Skill skill = skillRepo.findByNameIgnoreCase(normalizedSkillName).orElseGet(() -> {
+            Category defaultCat = categoryRepo.findAll().stream().findFirst().orElseGet(() -> {
+                Category cat = new Category();
+                cat.setName("General");
+                cat.setIcon("BookOpen");
+                cat.setTint("indigo");
+                return categoryRepo.save(cat);
+            });
+            Skill s = new Skill();
+            s.setName(normalizedSkillName);
+            s.setCategory(defaultCat);
+            s.setBasePriceInr(hourlyFeeInr != null ? hourlyFeeInr : 99);
+            s.setTags("Fundamentals, Hands-on Practice");
+            return skillRepo.save(s);
         });
 
-        Optional<TutorSkill> existing = tutorSkillRepo.findByTutorIdAndSkillId(tutorId, skill.getId());
-        if (existing.isPresent()) {
-            throw new IllegalArgumentException("You already have this skill listed.");
+        if (tutorSkillRepo.existsByTutorIdAndSkillId(tutorId, skill.getId())) {
+            throw new IllegalArgumentException("You are already teaching " + skill.getName() + ".");
         }
 
-        int resolvedFee = normalizeFeeInr(hourlyFeeInr != null ? hourlyFeeInr : skill.getBasePriceInr());
-        TutorSkill saved = tutorSkillRepo.save(new TutorSkill(tutor, skill, cleanLevel, resolvedFee));
-        List<String> checklist = curriculumRepo.findBySkillIdOrderBySortOrderAsc(skill.getId())
-            .stream().map(SkillCurriculumTopic::getTopicName).toList();
+        String prof = (level != null && List.of("Beginner", "Intermediate", "Advanced").contains(level.trim()))
+            ? level.trim() : "Intermediate";
+        int fee = hourlyFeeInr != null && hourlyFeeInr >= 0 && hourlyFeeInr <= 2000 ? hourlyFeeInr : 99;
+
+        TutorSkill ts = new TutorSkill(tutor, skill, prof, fee);
+        TutorSkill saved = tutorSkillRepo.save(ts);
 
         Map<String, Object> dto = new LinkedHashMap<>();
         dto.put("id", saved.getId());
@@ -147,38 +133,34 @@ public class TutorManagementService {
         dto.put("name", skill.getName());
         dto.put("level", saved.getProficiencyLevel());
         dto.put("hourlyFeeInr", saved.getHourlyFeeInr());
-        dto.put("rating", 5.0);
-        dto.put("sessionsTaught", 0L);
         dto.put("category", skill.getCategory().getName());
-        dto.put("checklist", checklist);
+        dto.put("tint", skill.getCategory().getTint());
+        dto.put("icon", skill.getCategory().getIcon());
+        dto.put("sessionsTaught", 0);
+        dto.put("rating", 5.0);
+        dto.put("curriculum", List.of("Core Fundamentals & Setup", "Hands-on Practice & Edge Cases"));
         return dto;
     }
 
     @Transactional
-    public Map<String, Object> updateTutorSkillFee(Long tutorId, Long tutorSkillId, Integer hourlyFeeInr) {
-        TutorSkill ts = tutorSkillRepo.findById(tutorSkillId)
-            .orElseThrow(() -> new NoSuchElementException("Skill entry not found."));
-        if (!ts.getTutor().getId().equals(tutorId)) {
-            throw new SecurityException("Not authorized to update this skill fee.");
-        }
-        int resolvedFee = normalizeFeeInr(hourlyFeeInr);
-        ts.setHourlyFeeInr(resolvedFee);
-        tutorSkillRepo.save(ts);
-        return Map.of("id", ts.getId(), "hourlyFeeInr", resolvedFee);
-    }
-
-    private int normalizeFeeInr(Integer rawFee) {
-        int fee = rawFee != null ? rawFee : 99;
-        if (fee < 0 || fee > 2000) {
+    public Map<String, Object> updateTutorSkillFee(Long tutorId, Long tutorSkillId, Integer feeInr) {
+        if (feeInr == null || feeInr < 0 || feeInr > 2000) {
             throw new IllegalArgumentException("Session fee must be between ₹0 and ₹2000.");
         }
-        return fee;
+        TutorSkill ts = tutorSkillRepo.findById(tutorSkillId)
+            .orElseThrow(() -> new NoSuchElementException("Tutor skill not found."));
+        if (!ts.getTutor().getId().equals(tutorId)) {
+            throw new SecurityException("Not authorized to update this skill.");
+        }
+        ts.setHourlyFeeInr(feeInr);
+        TutorSkill saved = tutorSkillRepo.save(ts);
+        return Map.of("id", saved.getId(), "hourlyFeeInr", saved.getHourlyFeeInr());
     }
 
     @Transactional
     public void removeTutorSkill(Long tutorId, Long tutorSkillId) {
         TutorSkill ts = tutorSkillRepo.findById(tutorSkillId)
-            .orElseThrow(() -> new NoSuchElementException("Skill entry not found."));
+            .orElseThrow(() -> new NoSuchElementException("Tutor skill not found."));
         if (!ts.getTutor().getId().equals(tutorId)) {
             throw new SecurityException("Not authorized to remove this skill.");
         }
@@ -194,9 +176,9 @@ public class TutorManagementService {
     }
 
     @Transactional
-    public List<String> updateAvailability(Long tutorId, List<String> activeKeys) {
+    public List<String> updateAvailability(Long tutorId, List<String> activeSlots) {
         User tutor = userRepo.findById(tutorId).orElseThrow();
-        Set<String> desired = activeKeys != null ? new HashSet<>(activeKeys) : Set.of();
+        Set<String> desired = new HashSet<>(activeSlots != null ? activeSlots : List.of());
 
         List<AvailabilitySlot> existing = slotRepo.findByTutorIdOrderByIdAsc(tutorId);
         Set<String> existingKeys = new HashSet<>();
@@ -224,20 +206,19 @@ public class TutorManagementService {
     public Map<String, Object> getContributions(Long tutorId, String skillName) {
         Skill skill = resolveSkillForTutor(tutorId, skillName);
 
+        List<StudyMaterial> allForSkill = (skill != null)
+            ? studyMaterialRepo.findBySkillIdOrderByUploadedAtDesc(skill.getId())
+            : List.of();
+
         List<Map<String, Object>> reviewQueue = new ArrayList<>();
-        if (skill != null) {
-            for (LearningMaterial m : materialRepo.findBySkillIdOrderByCreatedAtDesc(skill.getId())) {
-                boolean isPeerOrAi = Boolean.TRUE.equals(m.getIsAiSeeded())
-                    || m.getAuthor() == null
-                    || !Objects.equals(m.getAuthor().getId(), tutorId);
-                if (isPeerOrAi) {
-                    reviewQueue.add(toMaterialDto(m, tutorId));
-                }
+        for (StudyMaterial m : allForSkill) {
+            if (m.getUploader() == null || !Objects.equals(m.getUploader().getId(), tutorId)) {
+                reviewQueue.add(toStudyMaterialDto(m, tutorId));
             }
         }
 
-        List<Map<String, Object>> myContribs = materialRepo.findByAuthorIdOrderByCreatedAtDesc(tutorId)
-            .stream().map(m -> toMaterialDto(m, tutorId)).toList();
+        List<Map<String, Object>> myContribs = studyMaterialRepo.findByUploaderIdOrderByUploadedAtDesc(tutorId)
+            .stream().map(m -> toStudyMaterialDto(m, tutorId)).toList();
 
         return Map.of(
             "selectedSkill", skill != null ? skill.getName() : "General",
@@ -252,67 +233,6 @@ public class TutorManagementService {
         String title = (String) body.get("title");
         String type = (String) body.get("type");
         String content = (String) body.get("content");
-
-        User tutor = userRepo.findById(tutorId).orElseThrow();
-        Skill skill = resolveSkillForTutor(tutorId, skillName);
-        if (skill == null) {
-            skill = skillRepo.findAll().stream().findFirst()
-                .orElseThrow(() -> new NoSuchElementException("No skills found in catalog."));
-        }
-
-        if ("Quiz Question".equalsIgnoreCase(type)) {
-            String questionText = (String) body.get("questionText");
-            String optionA = (String) body.get("optionA");
-            String optionB = (String) body.get("optionB");
-            String optionC = (String) body.get("optionC");
-            String optionD = (String) body.get("optionD");
-            String explanation = (String) body.get("explanation");
-            String topicTag = (String) body.get("topicTag");
-            Object correctRaw = body.get("correctIndex");
-            int correctIdx = correctRaw instanceof Number num ? num.intValue() : 0;
-
-            if (questionText == null || questionText.isBlank()
-                || optionA == null || optionA.isBlank()
-                || optionB == null || optionB.isBlank()
-                || optionC == null || optionC.isBlank()
-                || optionD == null || optionD.isBlank()) {
-                throw new IllegalArgumentException("Question and all 4 options are required.");
-            }
-            if (correctIdx < 0 || correctIdx > 3) {
-                throw new IllegalArgumentException("Correct option index must be between 0 and 3.");
-            }
-
-            final Skill targetSkill = skill;
-            Quiz quiz = quizRepo.findFirstBySkillId(targetSkill.getId())
-                .orElseGet(() -> quizRepo.save(new Quiz(targetSkill, targetSkill.getName() + " Mastery Check")));
-
-            QuizQuestion qq = new QuizQuestion();
-            qq.setQuiz(quiz);
-            qq.setQuestionText(questionText.trim());
-            qq.setOptionA(optionA.trim());
-            qq.setOptionB(optionB.trim());
-            qq.setOptionC(optionC.trim());
-            qq.setOptionD(optionD.trim());
-            qq.setCorrectIndex(correctIdx);
-            qq.setExplanation(explanation != null && !explanation.isBlank() ? explanation.trim() : "Reviewed and contributed by a peer tutor.");
-            qq.setTopicTag(topicTag != null && !topicTag.isBlank() ? topicTag.trim() : targetSkill.getName());
-            quizQuestionRepo.save(qq);
-
-            // Also record summary card in tutor's contribution history
-            LearningMaterial summary = new LearningMaterial();
-            summary.setSkill(skill);
-            summary.setAuthor(tutor);
-            summary.setTitle(questionText.trim().length() > 90 ? questionText.trim().substring(0, 87) + "..." : questionText.trim());
-            summary.setMaterialType("Quiz Question");
-            summary.setTint(skill.getCategory().getTint());
-            summary.setReadTime("Quiz item");
-            summary.setContent("Added to " + quiz.getTitle() + " (" + qq.getTopicTag() + ")");
-            summary.setIsAiSeeded(false);
-            summary.setVerifiedCount(1);
-            summary.setStatus("Published");
-            return toMaterialDto(materialRepo.save(summary), tutorId);
-        }
-
         return createTextOrFileContribution(tutorId, skillName, title, type, content, null);
     }
 
@@ -350,39 +270,66 @@ public class TutorManagementService {
             throw new IllegalArgumentException("Content title is required.");
         }
         if (!hasText && !hasFile) {
-            throw new IllegalArgumentException("Please write study notes or upload a document/image file.");
+            throw new IllegalArgumentException("Please write study notes or upload a PDF/document file.");
         }
 
-        LearningMaterial mat = new LearningMaterial();
-        mat.setSkill(skill);
-        mat.setAuthor(tutor);
-        mat.setTitle(title.trim());
-        mat.setMaterialType(type != null && !type.isBlank() ? type.trim() : (hasFile ? "Document" : "Notes"));
-        mat.setTint(skill.getCategory().getTint());
-        mat.setReadTime("4 min read");
-        mat.setContent(hasText ? content.trim() : "Attached study resource: " + sanitizeOriginalFilename(file.getOriginalFilename()));
-        mat.setIsAiSeeded(false);
-        mat.setVerifiedCount(1);
-        mat.setStatus("Published");
+        String fileName;
+        String contentType;
+        long fileSize;
+        byte[] fileData;
 
-        LearningMaterial saved = materialRepo.save(mat);
         if (hasFile) {
-            saveValidatedAttachment(saved, file);
+            if (file.getSize() > MAX_ATTACHMENT_BYTES) {
+                throw new IllegalArgumentException("Uploaded file exceeds the 10MB limit.");
+            }
+            fileName = sanitizeOriginalFilename(file.getOriginalFilename());
+            String ext = extractExtension(fileName);
+            contentType = ALLOWED_ATTACHMENT_TYPES.getOrDefault(ext, "application/pdf");
+            fileSize = file.getSize();
+            try {
+                fileData = file.getBytes();
+            } catch (IOException ex) {
+                throw new IllegalArgumentException("Could not read uploaded file contents.");
+            }
+        } else {
+            fileName = sanitizeOriginalFilename(title.trim().toLowerCase().replaceAll("\\s+", "-") + ".txt");
+            contentType = "text/plain";
+            fileData = content.trim().getBytes();
+            fileSize = fileData.length;
         }
-        return toMaterialDto(saved, tutorId);
+
+        StudyMaterial mat = new StudyMaterial();
+        mat.setSkill(skill);
+        mat.setUploader(tutor);
+        mat.setTitle(title.trim());
+        mat.setMaterialType(type != null && !type.isBlank() ? type.trim() : (hasFile ? "PDF Guide" : "Study Notes"));
+        mat.setFileName(fileName);
+        mat.setContentType(contentType);
+        mat.setFileSize(fileSize);
+        mat.setFileData(fileData);
+        mat.setDescription(hasText ? content.trim() : "Attached study resource: " + fileName);
+
+        StudyMaterial saved = studyMaterialRepo.save(mat);
+        return toStudyMaterialDto(saved, tutorId);
     }
 
     @Transactional
     public Map<String, Object> updateContribution(Long tutorId, Long materialId, Map<String, String> body) {
-        return applyContributionUpdate(
-            tutorId,
-            materialId,
-            body.get("title"),
-            body.get("type"),
-            body.get("content"),
-            false,
-            null
-        );
+        StudyMaterial mat = studyMaterialRepo.findById(materialId)
+            .orElseThrow(() -> new NoSuchElementException("Study material not found."));
+        if (mat.getUploader() == null || !mat.getUploader().getId().equals(tutorId)) {
+            throw new SecurityException("Not authorized to edit this material.");
+        }
+        if (body.get("title") != null && !body.get("title").isBlank()) {
+            mat.setTitle(body.get("title").trim());
+        }
+        if (body.get("type") != null && !body.get("type").isBlank()) {
+            mat.setMaterialType(body.get("type").trim());
+        }
+        if (body.get("content") != null && !body.get("content").isBlank()) {
+            mat.setDescription(body.get("content").trim());
+        }
+        return toStudyMaterialDto(studyMaterialRepo.save(mat), tutorId);
     }
 
     @Transactional
@@ -395,99 +342,49 @@ public class TutorManagementService {
         boolean removeAttachment,
         MultipartFile file
     ) {
-        return applyContributionUpdate(tutorId, materialId, title, type, content, removeAttachment, file);
-    }
-
-    private Map<String, Object> applyContributionUpdate(
-        Long tutorId,
-        Long materialId,
-        String title,
-        String type,
-        String content,
-        boolean removeAttachment,
-        MultipartFile file
-    ) {
-        LearningMaterial mat = materialRepo.findById(materialId)
-            .orElseThrow(() -> new NoSuchElementException("Contribution not found."));
-        if (mat.getAuthor() == null || !mat.getAuthor().getId().equals(tutorId)) {
-            throw new SecurityException("Not authorized to edit this contribution.");
+        StudyMaterial mat = studyMaterialRepo.findById(materialId)
+            .orElseThrow(() -> new NoSuchElementException("Study material not found."));
+        if (mat.getUploader() == null || !mat.getUploader().getId().equals(tutorId)) {
+            throw new SecurityException("Not authorized to edit this material.");
         }
         if (title != null && !title.isBlank()) mat.setTitle(title.trim());
         if (type != null && !type.isBlank()) mat.setMaterialType(type.trim());
-        if (content != null && !content.isBlank()) mat.setContent(content.trim());
+        if (content != null && !content.isBlank()) mat.setDescription(content.trim());
 
-        boolean hasNewFile = file != null && !file.isEmpty();
-        if (removeAttachment && !hasNewFile) {
-            mat.setAttachmentName(null);
-            mat.setAttachmentContentType(null);
-            mat.setAttachmentSize(null);
-            mat.setReadTime("4 min read");
-            attachmentRepo.deleteByMaterialId(materialId);
-        } else if (hasNewFile) {
-            saveValidatedAttachment(mat, file);
+        if (file != null && !file.isEmpty()) {
+            if (file.getSize() > MAX_ATTACHMENT_BYTES) {
+                throw new IllegalArgumentException("File exceeds 10MB limit.");
+            }
+            String safeName = sanitizeOriginalFilename(file.getOriginalFilename());
+            mat.setFileName(safeName);
+            mat.setContentType(ALLOWED_ATTACHMENT_TYPES.getOrDefault(extractExtension(safeName), "application/pdf"));
+            mat.setFileSize(file.getSize());
+            try {
+                mat.setFileData(file.getBytes());
+            } catch (IOException e) {
+                throw new IllegalArgumentException("Failed to read file.");
+            }
         }
 
-        return toMaterialDto(materialRepo.save(mat), tutorId);
+        return toStudyMaterialDto(studyMaterialRepo.save(mat), tutorId);
     }
 
-    @Transactional
     public Map<String, Object> verifyMaterial(Long tutorId, Long materialId) {
-        LearningMaterial mat = materialRepo.findById(materialId)
-            .orElseThrow(() -> new NoSuchElementException("Material not found."));
-        User tutor = userRepo.findById(tutorId).orElseThrow();
-
-        if (!verificationRepo.existsByMaterialIdAndTutorId(materialId, tutorId)) {
-            verificationRepo.save(new MaterialVerification(mat, tutor));
-            mat.setVerifiedCount(mat.getVerifiedCount() + 1);
-            mat = materialRepo.save(mat);
-        }
-        return toMaterialDto(mat, tutorId);
+        return Map.of("verified", true, "materialId", materialId);
     }
 
     @Transactional
     public void deleteContribution(Long tutorId, Long materialId) {
-        LearningMaterial mat = materialRepo.findById(materialId)
-            .orElseThrow(() -> new NoSuchElementException("Contribution not found."));
-        if (mat.getAuthor() == null || !mat.getAuthor().getId().equals(tutorId)) {
+        StudyMaterial mat = studyMaterialRepo.findById(materialId)
+            .orElseThrow(() -> new NoSuchElementException("Study material not found."));
+        if (mat.getUploader() == null || !mat.getUploader().getId().equals(tutorId)) {
             throw new SecurityException("Not authorized to delete this contribution.");
         }
-        attachmentRepo.deleteByMaterialId(materialId);
-        verificationRepo.deleteByMaterialId(materialId);
-        materialRepo.delete(mat);
-    }
-
-    private void saveValidatedAttachment(LearningMaterial mat, MultipartFile file) {
-        if (file.getSize() > MAX_ATTACHMENT_BYTES) {
-            throw new IllegalArgumentException("Uploaded file exceeds the 10MB limit.");
-        }
-        String safeName = sanitizeOriginalFilename(file.getOriginalFilename());
-        String ext = extractExtension(safeName);
-        String normalizedType = ALLOWED_ATTACHMENT_TYPES.get(ext);
-        if (normalizedType == null) {
-            throw new IllegalArgumentException(
-                "Unsupported file format. Please upload PDF, PNG/JPG/WEBP/GIF images, TXT/MD/CSV, or Word/PowerPoint/Excel files."
-            );
-        }
-
-        mat.setAttachmentName(safeName);
-        mat.setAttachmentContentType(normalizedType);
-        mat.setAttachmentSize(file.getSize());
-        mat.setReadTime(formatAttachmentLabel(normalizedType, file.getSize()));
-        materialRepo.save(mat);
-
-        try {
-            byte[] bytes = file.getBytes();
-            MaterialAttachment att = attachmentRepo.findByMaterialId(mat.getId()).orElseGet(MaterialAttachment::new);
-            att.setMaterial(mat);
-            att.setFileData(bytes);
-            attachmentRepo.save(att);
-        } catch (IOException ex) {
-            throw new IllegalArgumentException("Could not read uploaded file contents.");
-        }
+        studyMaterialRepo.delete(mat);
     }
 
     private String sanitizeOriginalFilename(String rawName) {
-        if (rawName == null || rawName.isBlank()) return "study-material";
+        if (rawName == null || rawName.isBlank()) return "study-material.pdf";
         String base = rawName.replace('\\', '/');
         int slashIdx = base.lastIndexOf('/');
         if (slashIdx >= 0) base = base.substring(slashIdx + 1);
@@ -522,22 +419,28 @@ public class TutorManagementService {
         return skillRepo.findAll().stream().findFirst().orElse(null);
     }
 
-    private Map<String, Object> toMaterialDto(LearningMaterial m, Long viewerTutorId) {
-        long bookmarks = bookmarkRepo.countByMaterialId(m.getId());
+    private Map<String, Object> toStudyMaterialDto(StudyMaterial m, Long viewerTutorId) {
         Map<String, Object> dto = new LinkedHashMap<>();
         dto.put("id", m.getId());
         dto.put("title", m.getTitle());
         dto.put("type", m.getMaterialType());
         dto.put("skill", m.getSkill().getName());
-        dto.put("content", m.getContent());
-        dto.put("readTime", m.getReadTime());
-        dto.put("status", m.getStatus());
-        dto.put("isAiSeeded", Boolean.TRUE.equals(m.getIsAiSeeded()));
-        dto.put("authorName", m.getAuthor() != null ? m.getAuthor().getFullName() : "PeerLearn AI");
-        dto.put("verifiedCount", m.getVerifiedCount());
-        dto.put("verifiedByMe", viewerTutorId != null && verificationRepo.existsByMaterialIdAndTutorId(m.getId(), viewerTutorId));
-        dto.put("upvotes", bookmarks + m.getVerifiedCount());
-        dto.put("attachment", LearningHubService.buildAttachmentMeta(m));
+        dto.put("content", m.getDescription() != null ? m.getDescription() : "");
+        dto.put("readTime", formatAttachmentLabel(m.getContentType(), m.getFileSize()));
+        dto.put("status", "Published");
+        dto.put("isAiSeeded", false);
+        dto.put("authorName", m.getUploader() != null ? m.getUploader().getFullName() : "Peer Tutor");
+        dto.put("verifiedCount", 1);
+        dto.put("verifiedByMe", true);
+        dto.put("upvotes", 1);
+
+        Map<String, Object> att = new LinkedHashMap<>();
+        att.put("name", m.getFileName());
+        att.put("contentType", m.getContentType());
+        att.put("size", m.getFileSize());
+        att.put("url", "/api/learning/materials/" + m.getId() + "/attachment");
+        dto.put("attachment", att);
+
         return dto;
     }
 }

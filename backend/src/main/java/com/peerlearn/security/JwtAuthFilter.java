@@ -1,9 +1,7 @@
 package com.peerlearn.security;
 
 import com.peerlearn.entity.User;
-import com.peerlearn.entity.UserSession;
 import com.peerlearn.repository.UserRepository;
-import com.peerlearn.repository.UserSessionRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -15,7 +13,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.time.LocalDateTime;
 import java.util.Optional;
 
 @Component
@@ -23,16 +20,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
     private final UserRepository userRepository;
-    private final UserSessionRepository sessionRepository;
 
-    public JwtAuthFilter(
-        JwtUtil jwtUtil,
-        UserRepository userRepository,
-        UserSessionRepository sessionRepository
-    ) {
+    public JwtAuthFilter(JwtUtil jwtUtil, UserRepository userRepository) {
         this.jwtUtil = jwtUtil;
         this.userRepository = userRepository;
-        this.sessionRepository = sessionRepository;
     }
 
     @Override
@@ -53,17 +44,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 String email = jwtUtil.extractEmail(token);
                 String tokenId = jwtUtil.extractTokenId(token);
 
-                boolean sessionActive = false;
-                if (tokenId != null) {
-                    Optional<UserSession> sessOpt = sessionRepository.findByTokenId(tokenId);
-                    if (sessOpt.isPresent()) {
-                        UserSession sess = sessOpt.get();
-                        sessionActive = !Boolean.TRUE.equals(sess.getRevoked())
-                            && sess.getExpiresAt().isAfter(LocalDateTime.now());
-                    }
-                }
-
-                if (sessionActive) {
+                if (email != null && !email.isBlank()) {
                     Optional<User> userOpt = userRepository.findByEmailIgnoreCase(email);
                     if (userOpt.isPresent()) {
                         UserPrincipal principal = new UserPrincipal(userOpt.get());

@@ -492,9 +492,9 @@ export function ProfilePage() {
           <div className="flex items-center gap-2">
             <Monitor className="w-5 h-5 text-accent" />
             <div>
-              <h3 className="text-lg font-bold text-text-main">Login Activity &amp; Active Sessions</h3>
+              <h3 className="text-lg font-bold text-text-main">Login Activity &amp; Active Session</h3>
               <p className="text-xs text-text-muted">
-                Every login is recorded in PostgreSQL (`user_sessions`) and verified on each request.
+                Authenticated securely via stateless Bearer JWT with HMAC-SHA256 signature verification.
               </p>
             </div>
           </div>

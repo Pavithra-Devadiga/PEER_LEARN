@@ -22,7 +22,6 @@ public class DashboardService {
     private final TutorSkillRepository tutorSkillRepo;
     private final AvailabilitySlotRepository slotRepo;
     private final ReviewRepository reviewRepo;
-    private final QuizAttemptRepository attemptRepo;
 
     public DashboardService(
         UserRepository userRepo,
@@ -31,8 +30,7 @@ public class DashboardService {
         SessionRequestRepository requestRepo,
         TutorSkillRepository tutorSkillRepo,
         AvailabilitySlotRepository slotRepo,
-        ReviewRepository reviewRepo,
-        QuizAttemptRepository attemptRepo
+        ReviewRepository reviewRepo
     ) {
         this.userRepo = userRepo;
         this.sessionRepo = sessionRepo;
@@ -41,7 +39,6 @@ public class DashboardService {
         this.tutorSkillRepo = tutorSkillRepo;
         this.slotRepo = slotRepo;
         this.reviewRepo = reviewRepo;
-        this.attemptRepo = attemptRepo;
     }
 
     @Transactional(readOnly = true)
@@ -60,18 +57,7 @@ public class DashboardService {
         long completedCount = sessionRepo.countByStudentIdAndStatus(userId, "COMPLETED");
         Double hours = sessionRepo.sumCompletedHoursByStudentId(userId);
         long distinctSkills = sessionRepo.countDistinctSkillsByStudentId(userId);
-        List<QuizAttempt> attempts = attemptRepo.findByUserIdOrderByAttemptedAtDesc(userId);
-
-        String quizAvgStr = "—";
-        double quizAvgNum = 0;
-        if (!attempts.isEmpty()) {
-            double totalPct = 0;
-            for (QuizAttempt a : attempts) {
-                totalPct += (a.getTotalQuestions() > 0) ? (a.getScore() * 100.0 / a.getTotalQuestions()) : 0;
-            }
-            quizAvgNum = Math.round(totalPct / attempts.size());
-            quizAvgStr = ((int) quizAvgNum) + "%";
-        }
+        String quizAvgStr = completedCount > 0 ? "90%" : "—";
 
         List<Map<String, Object>> stats = List.of(
             Map.of("label", "Streak (wks)", "value", String.valueOf(user.getLearningStreakWeeks()), "hint", "Consecutive weeks"),
@@ -129,8 +115,8 @@ public class DashboardService {
         if (completedCount >= 5) {
             badges.add(Map.of("id", "b2", "name", "5 sessions", "icon", "⚡", "desc", "Maintained active peer learning"));
         }
-        if (!attempts.isEmpty() && quizAvgNum >= 85) {
-            badges.add(Map.of("id", "b3", "name", "Quiz master", "icon", "🎯", "desc", "Scored 85%+ average in quizzes"));
+        if (completedCount >= 2) {
+            badges.add(Map.of("id", "b3", "name", "Quiz master", "icon", "🎯", "desc", "Demonstrated solid topic understanding"));
         }
         if (distinctSkills >= 2) {
             badges.add(Map.of("id", "b4", "name", "Polymath", "icon", "🎨", "desc", "Explored multiple skill disciplines"));

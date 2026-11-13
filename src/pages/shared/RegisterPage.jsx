@@ -26,16 +26,8 @@ export function RegisterPage() {
 
     setLoading(true);
     try {
-      const res = await signUp({ name, email, password });
-      if (res?.welcomeEmailConfigured) {
-        showToast(`Account created! Welcome email sent to ${email.trim()}.`, 'success', 5000);
-      } else {
-        showToast(
-          'Account created! To receive real welcome emails in your inbox, add Gmail SMTP settings in application.properties.',
-          'info',
-          6000
-        );
-      }
+      await signUp({ name, email, password });
+      showToast('Account created successfully! Welcome to PeerLearn.', 'success', 4000);
     } catch (err) {
       setErrorMessage(err.message || 'Failed to create account. Please try again.');
     } finally {

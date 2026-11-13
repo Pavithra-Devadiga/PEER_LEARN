@@ -17,7 +17,6 @@ public class SkillBrowseService {
     private final TutorSkillRepository tutorSkillRepo;
     private final UserRepository userRepo;
     private final AvailabilitySlotRepository slotRepo;
-    private final SkillCurriculumTopicRepository curriculumRepo;
     private final ReviewRepository reviewRepo;
 
     public SkillBrowseService(
@@ -26,7 +25,6 @@ public class SkillBrowseService {
         TutorSkillRepository tutorSkillRepo,
         UserRepository userRepo,
         AvailabilitySlotRepository slotRepo,
-        SkillCurriculumTopicRepository curriculumRepo,
         ReviewRepository reviewRepo
     ) {
         this.categoryRepo = categoryRepo;
@@ -34,7 +32,6 @@ public class SkillBrowseService {
         this.tutorSkillRepo = tutorSkillRepo;
         this.userRepo = userRepo;
         this.slotRepo = slotRepo;
-        this.curriculumRepo = curriculumRepo;
         this.reviewRepo = reviewRepo;
     }
 
@@ -126,11 +123,9 @@ public class SkillBrowseService {
             Map<String, Integer> feeBySkill = new LinkedHashMap<>();
             for (TutorSkill ts : tsList) {
                 String sName = ts.getSkill().getName();
-                List<String> tList = curriculumRepo.findBySkillIdOrderBySortOrderAsc(ts.getSkill().getId())
-                    .stream().map(SkillCurriculumTopic::getTopicName).toList();
-                if (tList.isEmpty()) {
-                    tList = List.of("Core Fundamentals & Setup", "Hands-on Practice", "Debugging & Q&A");
-                }
+                List<String> tList = (ts.getSkill().getTags() != null && !ts.getSkill().getTags().isBlank())
+                    ? Arrays.stream(ts.getSkill().getTags().split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList()
+                    : List.of("Core Fundamentals & Setup", "Hands-on Practice", "Debugging & Q&A");
                 topicsBySkill.put(sName, tList);
                 feeBySkill.put(sName, ts.getHourlyFeeInr() != null ? ts.getHourlyFeeInr() : 99);
             }

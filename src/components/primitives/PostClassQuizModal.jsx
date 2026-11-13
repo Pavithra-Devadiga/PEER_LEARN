@@ -6,51 +6,31 @@ import {
   AlertCircle,
   Sparkles,
   RotateCcw,
-  Loader2,
 } from 'lucide-react';
 import { PillButton } from './PillButton';
-import { apiRequest } from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
+import { getQuizForSkill } from '../../data/quizData';
 
 export function PostClassQuizModal({ session, isOpen, onClose, onCompleted }) {
   const { showToast } = useToast();
-  const [loading, setLoading] = useState(false);
   const [quizData, setQuizData] = useState(null);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [answersMap, setAnswersMap] = useState({});
-  const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
-  const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!isOpen || !session?.rawId) return;
-    let active = true;
-    setLoading(true);
-    setError('');
-    setQuizData(null);
+    if (!isOpen || !session) return;
+    const skillName = session.skill || session.title || 'Python Programming';
+    const data = getQuizForSkill(skillName);
+    setQuizData(data);
     setCurrentIdx(0);
     setSelectedAnswer(null);
     setIsSubmitted(false);
     setAnswersMap({});
     setResult(null);
-
-    apiRequest(`/api/learning/sessions/${session.rawId}/quiz`)
-      .then((data) => {
-        if (active) setQuizData(data);
-      })
-      .catch((err) => {
-        if (active) setError(err.message || 'Could not load post-class quiz.');
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [isOpen, session?.rawId]);
+  }, [isOpen, session]);
 
   if (!isOpen || !session) return null;
 
@@ -63,7 +43,7 @@ export function PostClassQuizModal({ session, isOpen, onClose, onCompleted }) {
     setAnswersMap((prev) => ({ ...prev, [currentQ.id]: selectedAnswer }));
   };
 
-  const handleNextOrFinish = async () => {
+  const handleNextOrFinish = () => {
     if (!currentQ) return;
     const latestAnswers = { ...answersMap, [currentQ.id]: selectedAnswer };
 
@@ -74,23 +54,37 @@ export function PostClassQuizModal({ session, isOpen, onClose, onCompleted }) {
       return;
     }
 
-    setSubmitting(true);
-    try {
-      const res = await apiRequest(`/api/learning/sessions/${session.rawId}/quiz/attempt`, {
-        method: 'POST',
-        body: JSON.stringify({ answers: latestAnswers }),
-      });
-      setResult(res);
-      showToast(
-        `Post-class quiz completed: ${res.score}/${res.totalQuestions} (${res.percentage}%)!`,
-        'success'
-      );
-      if (onCompleted) onCompleted();
-    } catch (err) {
-      showToast(err.message || 'Could not submit post-class quiz.', 'error');
-    } finally {
-      setSubmitting(false);
-    }
+    // Calculate score client-side with 0 DB tables!
+    let correctCount = 0;
+    const strong = [];
+    const missed = [];
+
+    questions.forEach((q) => {
+      const chosen = latestAnswers[q.id];
+      if (chosen === q.correctIndex) {
+        correctCount++;
+        strong.push(q.topicTag);
+      } else {
+        missed.push(q.topicTag);
+      }
+    });
+
+    const totalQuestions = questions.length;
+    const percentage = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
+    const evaluation = {
+      score: correctCount,
+      totalQuestions,
+      percentage,
+      strongTopics: strong,
+      missedTopics: missed,
+    };
+
+    setResult(evaluation);
+    showToast(
+      `Post-class quiz completed: ${correctCount}/${totalQuestions} (${percentage}%)!`,
+      'success'
+    );
+    if (onCompleted) onCompleted(evaluation);
   };
 
   const handleRetry = () => {
@@ -124,44 +118,23 @@ export function PostClassQuizModal({ session, isOpen, onClose, onCompleted }) {
             <HelpCircle className="w-3.5 h-3.5" /> Post-Class Topic Quiz
           </span>
           <h2 className="text-xl font-extrabold text-text-main">
-            {quizData?.quizTitle || `${session.skill} Knowledge Check`}
+            {quizData?.title || `${session.skill} Knowledge Check`}
           </h2>
-          {quizData?.coveredTopics?.length > 0 && (
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] font-semibold text-text-muted">Class topics:</span>
-              {quizData.coveredTopics.map((t) => (
-                <span
-                  key={t}
-                  className="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-card-muted border border-border-subtle text-text-main"
-                >
-                  {t}
-                </span>
-              ))}
-            </div>
-          )}
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] font-semibold text-text-muted">Skill:</span>
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-card-muted border border-border-subtle text-text-main">
+              {session.skill || 'Programming & CS'}
+            </span>
+          </div>
         </div>
 
-        {loading && (
-          <div className="py-12 flex items-center justify-center gap-2 text-xs text-text-muted">
-            <Loader2 className="w-4 h-4 animate-spin text-accent" />
-            <span>Building topic-matched quiz from your session...</span>
-          </div>
-        )}
-
-        {error && (
-          <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {!loading && !error && quizData && questions.length === 0 && (
+        {questions.length === 0 && (
           <div className="p-6 rounded-2xl bg-card-muted/60 border border-border-subtle text-center text-xs text-text-muted">
-            No quiz questions exist yet for {session.skill}. Tutors can add Quiz Questions in Contribute Materials!
+            No quiz questions exist yet for {session.skill}.
           </div>
         )}
 
-        {!loading && !error && result && (
+        {result && (
           <div className="space-y-4 pt-2 text-center">
             <div className="w-16 h-16 rounded-full bg-emerald-500/15 text-emerald-500 border border-emerald-500/30 flex items-center justify-center mx-auto">
               <CheckCircle2 className="w-8 h-8" />
@@ -222,17 +195,15 @@ export function PostClassQuizModal({ session, isOpen, onClose, onCompleted }) {
           </div>
         )}
 
-        {!loading && !error && !result && currentQ && (
+        {!result && currentQ && (
           <div className="space-y-4 pt-2 border-t border-border-subtle/70">
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
               <span className="font-bold uppercase tracking-wider text-accent">
                 Question {currentIdx + 1} of {questions.length}
               </span>
-              {currentQ.matchedTopic && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[11px] font-bold">
-                  <Sparkles className="w-3 h-3" /> Covered in class: {currentQ.topicTag}
-                </span>
-              )}
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[11px] font-bold">
+                <Sparkles className="w-3 h-3" /> Topic: {currentQ.topicTag}
+              </span>
             </div>
 
             <h3 className="text-base font-bold text-text-main leading-snug">
@@ -293,14 +264,9 @@ export function PostClassQuizModal({ session, isOpen, onClose, onCompleted }) {
                 <PillButton
                   variant="primary"
                   size="sm"
-                  disabled={submitting}
                   onClick={handleNextOrFinish}
                 >
-                  {submitting
-                    ? 'Saving...'
-                    : currentIdx + 1 < questions.length
-                    ? 'Next Question →'
-                    : 'Finish & Save Score'}
+                  {currentIdx + 1 < questions.length ? 'Next Question →' : 'Finish & View Score'}
                 </PillButton>
               )}
             </div>

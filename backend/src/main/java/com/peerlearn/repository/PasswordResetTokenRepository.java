@@ -1,10 +1,7 @@
 package com.peerlearn.repository;
 
-import com.peerlearn.entity.PasswordResetToken;
-import org.springframework.data.jpa.repository.JpaRepository;
-
-import java.util.Optional;
-
-public interface PasswordResetTokenRepository extends JpaRepository<PasswordResetToken, Long> {
-    Optional<PasswordResetToken> findByToken(String token);
+/**
+ * Removed in 11-table schema simplification.
+ */
+public interface PasswordResetTokenRepository {
 }

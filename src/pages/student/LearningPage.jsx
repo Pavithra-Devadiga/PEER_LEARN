@@ -6,6 +6,7 @@ import { MaterialAttachmentViewer } from '../../components/primitives/MaterialAt
 import { BookOpen, HelpCircle, Bookmark, BookmarkCheck, BarChart2, AlertTriangle, RotateCcw, X, Clock, Paperclip, CheckCircle2 } from 'lucide-react';
 import { apiRequest, formatFileSize } from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
+import { getQuizForSkill } from '../../data/quizData';
 
 export function LearningPage() {
   const navigate = useNavigate();
@@ -39,9 +40,10 @@ export function LearningPage() {
       const data = await apiRequest(`/api/learning${qs}`);
       if (data) {
         setSkills(data.skills || []);
-        setSelectedSkill(data.selectedSkill || '');
+        const currentSkill = skillName || data.selectedSkill || 'Python Programming';
+        setSelectedSkill(currentSkill);
         setCheatsheets(data.cheatsheets || []);
-        setQuiz(data.quiz || null);
+        setQuiz(getQuizForSkill(currentSkill));
         if (data.learningProgress) setLearningProgress(data.learningProgress);
         setCurrentQIndex(0);
         setSelectedAnswer(null);
@@ -61,6 +63,7 @@ export function LearningPage() {
 
   const handleSelectSkill = (skill) => {
     setSelectedSkill(skill);
+    setQuiz(getQuizForSkill(skill));
     loadHub(skill);
   };
 
@@ -95,7 +98,7 @@ export function LearningPage() {
     }
   };
 
-  const handleNextQuestion = async () => {
+  const handleNextQuestion = () => {
     if (!quiz?.questions) return;
     if (currentQIndex + 1 < quiz.questions.length) {
       setCurrentQIndex((i) => i + 1);
@@ -103,18 +106,17 @@ export function LearningPage() {
       setIsAnswerSubmitted(false);
     } else {
       setQuizFinished(true);
-      try {
-        const res = await apiRequest(`/api/learning/quizzes/${quiz.id}/attempt`, {
-          method: 'POST',
-          body: JSON.stringify({ answers: answersMap }),
-        });
-        if (res?.learningProgress) {
-          setLearningProgress(res.learningProgress);
-        }
-        showToast('Quiz submitted and saved to your analytics.', 'success');
-      } catch (err) {
-        showToast(err.message || 'Could not record quiz attempt.', 'error');
-      }
+      const totalPct = Math.round((score / quiz.questions.length) * 100);
+      setLearningProgress((prev) => ({
+        ...prev,
+        overallScore: `${totalPct}%`,
+        level: totalPct >= 80 ? 'Level 3: Proficient' : 'Level 2: Developing',
+        history: [
+          { date: 'Today', quiz: quiz.title, score: `${totalPct}%` },
+          ...(prev.history || []).slice(0, 4),
+        ],
+      }));
+      showToast('Quiz complete! Your learning progress has been updated.', 'success');
     }
   };
 
